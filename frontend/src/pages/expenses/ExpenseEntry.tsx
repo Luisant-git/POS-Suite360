@@ -1,0 +1,693 @@
+import { getMalaysiaDateStr, formatMalaysiaDate } from '../../utils/date';
+import { useState, useEffect } from 'react';
+import { X, Briefcase, PlusSquare, Download, Filter, RefreshCw, Edit, XCircle, Trash2, Plus } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import api from '../../services/api';
+import { exportTableToPdf, type PdfColumn } from '../../utils/exportPdf';
+import { exportToExcel } from '../../utils/exportExcel';
+import { useSettings } from '../../contexts/SettingsContext';
+import SearchableSelect from '../../components/SearchableSelect';
+import TableLoader from '../../components/TableLoader';
+
+const ExpenseEntry = () => {
+  const { formatCurrency, settings } = useSettings();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  // Mobile Drawers
+  const [isFormDrawerOpen, setIsFormDrawerOpen] = useState(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
+
+  // New Expense Form State
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [expenseDate, setExpenseDate] = useState(getMalaysiaDateStr());
+  const [categoryId, setCategoryId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paymentModeId, setPaymentModeId] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Date-wise Filter & Search State for History
+  const [filterStartDate, setFilterStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return getMalaysiaDateStr(d);
+  });
+  const [filterEndDate, setFilterEndDate] = useState(() => getMalaysiaDateStr());
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Fetch Master Data
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expenseCategories'],
+    queryFn: async () => (await api.get('/expense-categories')).data
+  });
+
+  const { data: paymentModes = [] } = useQuery({
+    queryKey: ['paymentModes'],
+    queryFn: async () => (await api.get('/payment-modes')).data
+  });
+
+  // Fetch Expenses List with date filter
+  const { data: expenses = [], isLoading: historyLoading, refetch } = useQuery({
+    queryKey: ['expenses', filterStartDate, filterEndDate, filterCategoryId, searchQuery],
+    queryFn: async () => {
+      const res = await api.get('/expenses', {
+        params: {
+          startDate: filterStartDate || undefined,
+          endDate: filterEndDate || undefined,
+          categoryId: filterCategoryId || undefined,
+          search: searchQuery || undefined,
+        }
+      });
+      return res.data;
+    }
+  });
+
+  const totalExpenseAmount = expenses.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+
+  const createMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await api.post('/expenses', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Expense saved successfully!');
+      resetForm();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      toast.error(`Failed to save expense: ${err.message}`);
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await api.put(`/expenses/${editingId}`, payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Expense updated successfully!');
+      resetForm();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      toast.error(`Failed to update expense: ${err.message}`);
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await api.delete(`/expenses/${id}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Expense deleted successfully!');
+      if (editingId) resetForm();
+    },
+    onError: (err: any) => {
+      console.error(err);
+      toast.error(`Failed to delete expense: ${err.message}`);
+    }
+  });
+
+  const resetForm = () => {
+    setEditingId(null);
+    setAmount('');
+    setNotes('');
+    setCategoryId('');
+    setPaymentModeId('');
+    setExpenseDate(getMalaysiaDateStr());
+    setIsFormDrawerOpen(false);
+  };
+
+  const handleEdit = (exp: any) => {
+    setEditingId(exp.id);
+    setExpenseDate(exp.date ? String(exp.date).substring(0, 10) : getMalaysiaDateStr());
+    setCategoryId(exp.expenseCategoryId?.toString() || '');
+    setAmount(exp.amount?.toString() || '');
+    setPaymentModeId(exp.paymentModeId?.toString() || '');
+    setNotes(exp.notes || '');
+    setIsFormDrawerOpen(true);
+  };
+
+  const handleDelete = (id: number) => {
+    if (window.confirm('Are you sure you want to delete this expense record?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const handleSave = () => {
+    if (!categoryId || !amount || !paymentModeId) {
+      toast.error('Please fill out all required fields');
+      return;
+    }
+    const payload = {
+      date: expenseDate,
+      expenseCategoryId: Number(categoryId),
+      amount: Number(amount),
+      paymentModeId: Number(paymentModeId),
+      notes
+    };
+    if (editingId) {
+      updateMutation.mutate(payload);
+    } else {
+      createMutation.mutate(payload);
+    }
+  };
+
+  const setQuickDate = (type: 'today' | 'thisMonth' | 'all') => {
+    const now = new Date();
+    if (type === 'today') {
+      const todayStr = getMalaysiaDateStr(now);
+      setFilterStartDate(todayStr);
+      setFilterEndDate(todayStr);
+    } else if (type === 'thisMonth') {
+      const firstDay = (getMalaysiaDateStr().substring(0, 8) + "01");
+      const todayStr = getMalaysiaDateStr(now);
+      setFilterStartDate(firstDay);
+      setFilterEndDate(todayStr);
+    } else if (type === 'all') {
+      setFilterStartDate('');
+      setFilterEndDate('');
+    }
+  };
+
+  const handlePdfExport = () => {
+    const cols: PdfColumn[] = [
+      { header: 'S.No', dataKey: '_sno' },
+      { header: 'Date', dataKey: '_date' },
+      { header: 'Category', dataKey: '_category' },
+      { header: 'Payment Mode', dataKey: '_mode' },
+      { header: 'Description', dataKey: '_notes' },
+      { header: `Amount (${settings?.currencySymbol || 'RM'})`, dataKey: '_amount' },
+    ];
+    const rows = expenses.map((e: any, i: number) => ({
+      _sno: i + 1,
+      _date: formatMalaysiaDate(e.date),
+      _category: e.category?.name || '-',
+      _mode: e.paymentMode?.name || '-',
+      _notes: e.notes || '-',
+      _amount: Number(e.amount),
+    }));
+    exportTableToPdf(cols, rows, 'Daily_Expenses_Report', 'Daily Expenses Report', settings?.shopName, rows.length);
+  };
+
+  const handleExcelExport = () => {
+    const exportData = expenses.map((e: any, index: number) => ({
+      'S.No': index + 1,
+      'Date': formatMalaysiaDate(e.date),
+      'Category': e.category?.name || '-',
+      'Payment Mode': e.paymentMode?.name || '-',
+      'Description': e.notes || '-',
+      [`Amount (${settings?.currencySymbol || 'RM'})`]: Number(e.amount),
+    }));
+    exportToExcel(exportData, 'Daily_Expenses_Report');
+  };
+
+  // Keyboard shortcut Esc
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName);
+      if (e.key === 'Escape') {
+        if (isFormDrawerOpen) {
+          setIsFormDrawerOpen(false);
+          setEditingId(null);
+        } else if (isFilterDrawerOpen) {
+          setIsFilterDrawerOpen(false);
+        } else if (editingId) {
+          resetForm();
+        } else if (!isInput) {
+          navigate('/dashboard');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [editingId, isFormDrawerOpen, isFilterDrawerOpen, navigate]);
+
+  return (
+    <div className="flex flex-col h-full bg-[#F3F4F6] font-sans">
+
+      {/* Header */}
+      <div className="bg-[#0f172a] text-white px-4 py-3 flex flex-col sm:flex-row items-start sm:items-center justify-between shadow-md gap-3">
+        <div className="flex items-center gap-2">
+          <Briefcase size={20} className="text-blue-400" />
+          <h2 className="text-base font-bold tracking-wide uppercase">DAILY EXPENSES MANAGEMENT</h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={handleExcelExport}
+            className="bg-[#10B981] hover:bg-[#059669] text-white text-[12px] font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Download size={14} /> <span className="hidden lg:inline">Export Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePdfExport}
+            className="bg-[#EF4444] hover:bg-[#DC2626] text-white text-[12px] font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Download size={14} /> <span className="hidden lg:inline">Export PDF</span>
+          </button>
+          <Link to="/dashboard" className="bg-red-500 hover:bg-red-600 text-white py-1.5 px-3 rounded text-[12px] font-bold flex items-center gap-1.5 shadow-sm">
+            <X size={14} /> Close (Esc)
+          </Link>
+        </div>
+      </div>
+
+      {/* Mobile Form Drawer Backdrop */}
+      {isFormDrawerOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-xs transition-opacity duration-200"
+          onClick={() => {
+            resetForm();
+            setIsFormDrawerOpen(false);
+          }}
+        />
+      )}
+
+      {/* Mobile Filter Drawer Backdrop */}
+      {isFilterDrawerOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40 backdrop-blur-xs transition-opacity duration-200"
+          onClick={() => setIsFilterDrawerOpen(false)}
+        />
+      )}
+
+      {/* Main Content */}
+      <div className="flex-1 p-3 sm:p-4 overflow-auto overflow-x-auto">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 h-full">
+
+          {/* Left Panel - Log New Expense (Desktop: Inline Column, Mobile: Slide-over Right Drawer) */}
+          <div className={`
+            bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col
+            lg:w-1/3 lg:static lg:z-auto lg:h-auto lg:max-w-none lg:shadow-sm lg:rounded-lg lg:flex lg:flex-col lg:self-start
+            ${isFormDrawerOpen
+              ? 'fixed inset-y-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col h-full overflow-hidden animate-in slide-in-from-right duration-200'
+              : 'hidden lg:flex'
+            }
+          `}>
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-[#0f172a] text-sm flex items-center gap-2 uppercase">
+                {editingId ? 'EDIT EXPENSE' : 'LOG NEW EXPENSE'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  setIsFormDrawerOpen(false);
+                }}
+                className="lg:hidden p-1 rounded hover:bg-gray-200 text-gray-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 flex flex-col gap-3.5 overflow-y-auto custom-scrollbar">
+              <div>
+                <label className="block text-[12px] font-bold text-black mb-1">Expense Date</label>
+                <input
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm font-bold text-black focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-black mb-1">Expense Category *</label>
+                <SearchableSelect
+                  options={categories.map((c: any) => ({ value: c.id, label: c.name }))}
+                  value={categoryId}
+                  onChange={(val) => setCategoryId(val || '')}
+                  placeholder="Search Category..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-black mb-1">Amount *</label>
+                <input
+                  type="number" step="any"
+                  value={amount}
+                  placeholder="0.00"
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm font-bold text-black focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-black mb-1">Payment Mode *</label>
+                <SearchableSelect
+                  options={paymentModes.map((m: any) => ({ value: m.id, label: m.name }))}
+                  value={paymentModeId}
+                  onChange={(val) => setPaymentModeId(val || '')}
+                  placeholder="Search Payment Mode..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-black mb-1">Description / Notes</label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Additional details..."
+                  className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm font-bold text-black focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none"
+                ></textarea>
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="flex-1 bg-[#0f172a] hover:bg-gray-800 text-white font-bold py-2.5 px-4 rounded shadow-md flex justify-center items-center gap-2 transition-colors disabled:opacity-50"
+                >
+                  <PlusSquare size={18} /> {editingId ? (updateMutation.isPending ? 'Updating...' : 'Update Expense') : (createMutation.isPending ? 'Saving...' : 'Save Expense')}
+                </button>
+                {editingId && (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-3 rounded shadow-md flex justify-center items-center gap-1.5 transition-colors"
+                  >
+                    <XCircle size={18} /> Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Panel - Expense Log History with Date Wise Filter */}
+          <div className="w-full lg:w-2/3 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col flex-1">
+            <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg flex justify-between items-center gap-2 shrink-0">
+              <h3 className="font-bold text-[#0f172a] text-sm uppercase">
+                EXPENSE LOG HISTORY
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetForm();
+                    setIsFormDrawerOpen(true);
+                  }}
+                  className="lg:hidden flex items-center gap-1 bg-[#16A34A] hover:bg-[#15803D] text-white px-2.5 py-1 rounded text-xs font-bold shadow-sm transition-colors whitespace-nowrap"
+                >
+                  <Plus size={14} />
+                  <span>Add Expense</span>
+                </button>
+                <span className="text-xs font-bold text-black">{expenses.length} Records</span>
+              </div>
+            </div>
+
+            {/* Mobile Quick Bar: Important fields in front (From Date, To Date) + Filter Button */}
+            <div className="lg:hidden flex items-center justify-between gap-2 p-2.5 sm:p-3 bg-[#F8FAFC] border-b border-gray-200 shrink-0">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="w-1/2 px-2 py-1.5 border border-gray-300 rounded text-xs font-bold text-black bg-white focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-gray-400 font-bold text-xs">-</span>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="w-1/2 px-2 py-1.5 border border-gray-300 rounded text-xs font-bold text-black bg-white focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFilterDrawerOpen(true)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-bold transition-colors border shadow-sm shrink-0 ${
+                  filterCategoryId || searchQuery
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-[#0f172a] border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <Filter size={14} />
+                <span>Filter</span>
+                {(filterCategoryId || searchQuery) && (
+                  <span className="w-2 h-2 rounded-full bg-yellow-400"></span>
+                )}
+              </button>
+            </div>
+
+            {/* Desktop Date Wise Filter Controls Bar */}
+            <div className="hidden lg:block p-3 sm:p-4 border-b border-gray-200 bg-[#F8FAFC]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 items-end mb-2">
+                <div>
+                  <label className="block text-[11px] font-bold text-black mb-1">From Date</label>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-black mb-1">To Date</label>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-black mb-1">Category</label>
+                  <SearchableSelect
+                    options={[{ value: '', label: 'All Categories' }, ...categories.map((c: any) => ({ value: c.id, label: c.name }))]}
+                    value={filterCategoryId}
+                    onChange={(val) => setFilterCategoryId(val || '')}
+                    placeholder="All Categories"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-black mb-1">Search Description</label>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search notes or category..."
+                    className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between pt-1 gap-2">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1 rounded flex items-center gap-1 transition-colors">
+                    <Filter size={12} /> Apply Filter
+                  </button>
+                  <button type="button" onClick={() => setQuickDate('today')} className="bg-gray-200 hover:bg-gray-300 text-black text-xs font-bold px-2.5 py-1 rounded transition-colors">
+                    Today
+                  </button>
+                  <button type="button" onClick={() => setQuickDate('thisMonth')} className="bg-gray-200 hover:bg-gray-300 text-black text-xs font-bold px-2.5 py-1 rounded transition-colors">
+                    This Month
+                  </button>
+                  <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); setFilterCategoryId(''); setSearchQuery(''); }} className="text-black hover:text-blue-600 text-xs font-bold px-2 py-1 flex items-center gap-1">
+                    <RefreshCw size={11} /> Reset
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* PDF Printable & Export Container */}
+            <div id="daily-expenses-export" className="p-3 sm:p-4 flex-1 flex flex-col min-h-0 overflow-hidden">
+
+              <div className="flex-1 overflow-auto overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm text-left whitespace-nowrap min-w-[600px]">
+                  <thead className="text-xs text-white uppercase bg-[#0f172a]">
+                    <tr>
+                      <th className="px-3.5 py-2.5 font-bold text-center w-28 border-r border-gray-600">Date</th>
+                      <th className="px-3.5 py-2.5 font-bold border-r border-gray-600 text-left">Category</th>
+                      <th className="px-3.5 py-2.5 font-bold border-r border-gray-600 text-center w-36">Mode</th>
+                      <th className="px-3.5 py-2.5 font-bold border-r border-gray-600 text-left">Notes / Remarks</th>
+                      <th className="px-3.5 py-2.5 font-bold text-right w-36 border-r border-gray-600">Amount</th>
+                      <th className="px-3.5 py-2.5 font-bold text-center w-24 print:hidden">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyLoading ? (
+                      <TableLoader columns={6} />
+                    ) : expenses.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-6 text-black font-bold">No expenses found for selected criteria.</td>
+                      </tr>
+                    ) : (
+                      expenses.map((exp: any, idx: number) => (
+                        <tr key={exp.id} className={`border-b border-gray-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors`}>
+                          <td className="px-3.5 py-2 text-center text-black font-bold">{formatMalaysiaDate(exp.date)}</td>
+                          <td className="px-3.5 py-2 font-bold text-[#16A34A]">{exp.category?.name || '-'}</td>
+                          <td className="px-3.5 py-2 text-center text-black font-bold">{exp.paymentMode?.name || '-'}</td>
+                          <td className="px-3.5 py-2 text-black font-bold text-xs">{exp.notes || '-'}</td>
+                          <td className="px-3.5 py-2 text-right font-bold text-red-600 border-r border-gray-200">{formatCurrency(exp.amount)}</td>
+                          <td className="px-3.5 py-2 text-center print:hidden">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleEdit(exp)}
+                                className="text-blue-600 hover:bg-blue-100 p-1.5 rounded transition-colors"
+                                title="Edit Expense"
+                              >
+                                <Edit size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(exp.id)}
+                                className="text-red-500 hover:bg-red-100 p-1.5 rounded transition-colors"
+                                title="Delete Expense"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total Expenses Summary Footer */}
+              <div className="mt-3 pt-3 border-t-2 border-[#0f172a] flex justify-between items-center bg-[#F0F7FF] px-4 py-2.5 rounded">
+                <span className="font-bold text-[13px] text-[#0f172a] uppercase">Total Expenses ({expenses.length} Records)</span>
+                <span className="font-bold text-[15px] text-red-600">{formatCurrency(totalExpenseAmount)}</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Mobile Filter Drawer (Slide-over from Right) */}
+      <div
+        className={`
+          bg-white border-l border-gray-200 shadow-2xl flex flex-col h-full overflow-hidden
+          lg:hidden
+          ${isFilterDrawerOpen
+            ? 'fixed inset-y-0 right-0 z-50 w-full max-w-sm animate-in slide-in-from-right duration-200'
+            : 'hidden'
+          }
+        `}
+      >
+        <div className="px-4 py-3 bg-[#0f172a] text-white flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-2">
+            <Filter size={16} className="text-blue-400" />
+            <h3 className="font-bold text-sm tracking-wide uppercase">EXPENSE FILTERS</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsFilterDrawerOpen(false)}
+            className="p-1 rounded hover:bg-white/20 text-white transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-4 flex-1 overflow-y-auto flex flex-col gap-3.5">
+          <div>
+            <label className="block text-[12px] font-bold text-black mb-1">From Date</label>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-bold text-black mb-1">To Date</label>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-bold text-black mb-1">Category</label>
+            <SearchableSelect
+              options={[{ value: '', label: 'All Categories' }, ...categories.map((c: any) => ({ value: c.id, label: c.name }))]}
+              value={filterCategoryId}
+              onChange={(val) => setFilterCategoryId(val || '')}
+              placeholder="All Categories"
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-bold text-black mb-1">Search Description</label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search notes or category..."
+              className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-xs font-bold text-black focus:outline-none focus:border-blue-500 bg-white"
+            />
+          </div>
+
+          <div className="pt-2 flex flex-col gap-2">
+            <span className="text-[11px] font-bold text-gray-500 uppercase">Quick Date Presets</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setQuickDate('today')}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold py-1.5 rounded transition-colors text-center"
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickDate('thisMonth')}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold py-1.5 rounded transition-colors text-center"
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuickDate('all')}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-black text-xs font-bold py-1.5 rounded transition-colors text-center"
+              >
+                All
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-gray-200 bg-gray-50 flex gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              refetch();
+              setIsFilterDrawerOpen(false);
+            }}
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-3 rounded flex justify-center items-center gap-1.5 transition-colors shadow-sm"
+          >
+            <Filter size={14} /> Apply Filter
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFilterStartDate('');
+              setFilterEndDate('');
+              setFilterCategoryId('');
+              setSearchQuery('');
+            }}
+            className="bg-white border border-gray-300 hover:bg-gray-100 text-black text-xs font-bold py-2 px-3 rounded flex items-center gap-1 transition-colors shadow-sm"
+          >
+            <RefreshCw size={13} /> Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ExpenseEntry;

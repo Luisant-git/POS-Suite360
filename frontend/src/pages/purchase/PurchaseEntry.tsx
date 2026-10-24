@@ -1,0 +1,1769 @@
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { useForm, useFieldArray } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { List, Plus, Trash2, CheckCircle, PlusCircle, X, RotateCcw, FileText, Save, ArrowLeft, Search, Truck, ChevronRight, MinusCircle, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
+import api from '../../services/api';
+import { useSettings } from '../../contexts/SettingsContext';
+import SearchableSelect from '../../components/SearchableSelect';
+import LeaveConfirmModal from '../../components/LeaveConfirmModal';
+import ShortcutHelpButton from '../../components/ShortcutHelp';
+import Select from 'react-select';
+
+const indianStates = [
+  "01 - Jammu & Kashmir", "02 - Himachal Pradesh", "03 - Punjab", "04 - Chandigarh",
+  "05 - Uttarakhand", "06 - Haryana", "07 - Delhi", "08 - Rajasthan", "09 - Uttar Pradesh",
+  "10 - Bihar", "11 - Sikkim", "12 - Arunachal Pradesh", "13 - Nagaland", "14 - Manipur",
+  "15 - Mizoram", "16 - Tripura", "17 - Meghalaya", "18 - Assam", "19 - West Bengal",
+  "20 - Jharkhand", "21 - Odisha", "22 - Chhattisgarh", "23 - Madhya Pradesh", "24 - Gujarat",
+  "25 - Daman & Diu", "26 - Dadra & Nagar Haveli", "27 - Maharashtra", "29 - Karnataka",
+  "30 - Goa", "31 - Lakshadweep", "32 - Kerala", "33 - Tamil Nadu", "34 - Puducherry",
+  "35 - Andaman & Nicobar Islands", "36 - Telangana", "37 - Andhra Pradesh", "38 - Ladakh"
+];
+
+const purchaseItemSchema = z.object({
+  productId: z.coerce.number().min(0),
+  quantity: z.coerce.number().min(0),
+  unit: z.string().optional(),
+  pRate: z.coerce.number().min(0),
+  wRate: z.coerce.number().min(0),
+  sRate: z.coerce.number().min(0),
+  mrp: z.coerce.number().min(0),
+  discPercent: z.coerce.number().min(0).max(100),
+  discAmt: z.coerce.number().min(0),
+  tax: z.coerce.number().optional(),
+  total: z.coerce.number(),
+}).superRefine((data, ctx) => {
+  if (data.productId > 0) {
+    if (data.quantity <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Quantity must be > 0",
+        path: ["quantity"]
+      });
+    }
+    if (data.pRate < 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Purchase Rate is required",
+        path: ["pRate"]
+      });
+    }
+  }
+});
+
+const purchaseSchema = z.object({
+  supplierId: z.coerce.number().min(1, 'Supplier is required').or(z.literal(0)),
+  invoiceNo: z.string(),
+  invoiceDate: z.string().optional(),
+  entryNo: z.string(),
+  date: z.string(),
+  paymentModeId: z.coerce.number().min(1, 'Payment Mode is required').or(z.literal(0)),
+
+  totalAmount: z.coerce.number(),
+  totalDiscount: z.coerce.number(),
+  totalDiscountPercent: z.coerce.number().optional(),
+  transportCharge: z.coerce.number().optional(),
+  wages: z.coerce.number().optional(),
+  tax: z.coerce.number().optional(),
+  roundOff: z.coerce.number(),
+  netAmount: z.coerce.number(),
+
+  items: z.array(purchaseItemSchema).min(1, 'At least one item is required'),
+});
+
+type PurchaseFormValues = z.infer<typeof purchaseSchema>;
+
+const PurchaseEntry = () => {
+  const { settings, formatCurrency } = useSettings();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [newSupplier, setNewSupplier] = useState({ name: '', phone: '', address: '', state: '' });
+
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [pendingSavePayload, setPendingSavePayload] = useState<any>(null);
+  const printAfterSaveRef = useRef(false);
+
+  const focusCell = (row: number, col: number) => {
+    setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-row="${row}"][data-col="${col}"]`);
+      if (el) { el.focus(); (el as HTMLInputElement).select?.(); }
+    }, 10);
+  };
+
+  const handleCellKey = (e: React.KeyboardEvent, rowIndex: number, col: number, totalCols: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const nextRow = rowIndex + 1;
+      if (nextRow < fields.length) {
+        setTimeout(() => {
+          const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${nextRow}"] input`);
+          if (selectEl) selectEl.focus();
+        }, 80);
+      } else {
+        append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, tax: 0, total: 0 });
+        setTimeout(() => {
+          const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${nextRow}"] input`);
+          if (selectEl) selectEl.focus();
+        }, 100);
+      }
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      const nextCol = col + 1;
+      if (nextCol <= totalCols) {
+        focusCell(rowIndex, nextCol);
+      } else {
+        const nextRow = rowIndex + 1;
+        if (nextRow < fields.length) {
+          setTimeout(() => {
+            const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${nextRow}"] input`);
+            if (selectEl) selectEl.focus();
+          }, 80);
+        } else {
+          append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, tax: 0, total: 0 });
+          setTimeout(() => {
+            const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${nextRow}"] input`);
+            if (selectEl) selectEl.focus();
+          }, 100);
+        }
+      }
+    } else if (e.key === 'ArrowRight') {
+      if ((e.target as HTMLInputElement).selectionStart === (e.target as HTMLInputElement).value.length) {
+        e.preventDefault();
+        const nextCol = col + 1;
+        if (nextCol <= totalCols) focusCell(rowIndex, nextCol);
+      }
+    } else if (e.key === 'ArrowLeft') {
+      if ((e.target as HTMLInputElement).selectionStart === 0) {
+        e.preventDefault();
+        const prevCol = col - 1;
+        if (prevCol >= 1) focusCell(rowIndex, prevCol);
+        else if (prevCol === 0) {
+          const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${rowIndex}"] input`);
+          if (selectEl) selectEl.focus();
+        }
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (rowIndex > 0) focusCell(rowIndex - 1, col);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (rowIndex < fields.length - 1) focusCell(rowIndex + 1, col);
+    } else if (e.ctrlKey && e.key === 'Delete') {
+      e.preventDefault();
+      if (fields.length > 1) {
+        remove(rowIndex);
+        setTimeout(() => {
+          const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${Math.max(0, rowIndex - 1)}"] input`);
+          if (selectEl) selectEl.focus();
+        }, 50);
+      }
+    }
+  };
+
+  const { register, control, handleSubmit, watch, setValue, reset, getValues } = useForm<PurchaseFormValues>({
+    resolver: zodResolver(purchaseSchema) as any,
+    defaultValues: {
+      entryNo: 'Generating...',
+      invoiceNo: '',
+      invoiceDate: new Date().toISOString().split('T')[0],
+      supplierId: 0,
+      date: new Date().toISOString().split('T')[0],
+      paymentModeId: 0,
+      items: [{ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, tax: 0, total: 0 }],
+      totalAmount: 0,
+      totalDiscountPercent: '' as any,
+      totalDiscount: '' as any,
+      transportCharge: '' as any,
+      wages: '' as any,
+      tax: 0,
+      roundOff: '' as any,
+      netAmount: 0
+    }
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "items"
+  });
+
+  // Fetch Masters & Next Entry No
+  const { data: suppliers = [] } = useQuery({ queryKey: ['suppliers'], queryFn: async () => (await api.get('/suppliers')).data });
+  const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: async () => (await api.get('/products')).data });
+  const { data: nextEntryData } = useQuery({ queryKey: ['nextEntryNo'], queryFn: async () => (await api.get('/purchases/next-entry-no')).data });
+  const { data: paymentModes = [] } = useQuery({ queryKey: ['paymentModes'], queryFn: async () => (await api.get('/payment-modes')).data });
+
+  // Update default entry no
+  useEffect(() => {
+    if (nextEntryData?.entryNo) {
+      setValue('entryNo', nextEntryData.entryNo);
+    }
+  }, [nextEntryData, setValue]);
+
+  // Watch values for calculation
+  const items = watch('items');
+  const watchTotalDiscount = watch('totalDiscount');
+  const watchTransportCharge = watch('transportCharge');
+  const watchwages = watch('wages');
+  const watchRoundOff = watch('roundOff');
+
+  // Calculations
+  useEffect(() => {
+    let totalAmount = 0;
+    let totalTax = 0;
+
+    items.forEach((item, index) => {
+      const q = Number(item.quantity) || 0;
+      const pRate = Number(item.pRate) || 0;
+
+      let discAmt = Number(item.discAmt) || 0;
+
+      let subtotal = (q * pRate) - discAmt;
+
+      let itemTax = 0;
+      if (settings?.enableTax && item.productId > 0) {
+        const product = products.find((p: any) => p.id === Number(item.productId));
+        if (product && product.taxPercent) {
+          const taxPercent = Number(product.taxPercent) || 0;
+          if (settings.taxType === 'inclusive') {
+            const totalWithTax = subtotal;
+            itemTax = totalWithTax - (totalWithTax / (1 + (taxPercent / 100)));
+            subtotal = totalWithTax - itemTax;
+          } else {
+            itemTax = (subtotal * taxPercent) / 100;
+          }
+        }
+      }
+
+      const total = subtotal + itemTax;
+
+      if (item.tax !== itemTax) {
+        setValue(`items.${index}.tax`, Number(itemTax.toFixed(2)), { shouldValidate: false });
+      }
+
+      if (item.total !== total) {
+        setValue(`items.${index}.total`, Number(total.toFixed(2)), { shouldValidate: false });
+      }
+      totalAmount += subtotal;
+      totalTax += itemTax;
+    });
+
+    const d = Number(watchTotalDiscount) || 0;
+    const tc = Number(watchTransportCharge) || 0;
+    const bc = Number(watchwages) || 0;
+    const r = Number(watchRoundOff) || 0;
+    const netAmount = totalAmount + totalTax - d + tc + bc + r;
+
+    setValue('totalAmount', Number(totalAmount.toFixed(2)));
+    setValue('tax', Number(totalTax.toFixed(2)));
+    setValue('netAmount', Number(netAmount.toFixed(2)));
+
+  }, [JSON.stringify(items), watchTotalDiscount, watchTransportCharge, watchwages, watchRoundOff, setValue, settings?.enableTax, products]);
+
+  const handleProductChange = async (index: number, productId: string) => {
+    const product = products.find((p: any) => p.id === Number(productId));
+    if (product) {
+      setValue(`items.${index}.unit`, product.unit?.shortCode || product.unit?.name || 'Nos');
+
+      try {
+        const response = await api.get(`/purchases/latest-rate/${productId}`);
+        const latest = response.data;
+        if (latest) {
+          setValue(`items.${index}.pRate`, latest.rate || product.purchaseRate || 0);
+          setValue(`items.${index}.wRate`, latest.wRate || product.wholesaleRate || 0);
+          setValue(`items.${index}.sRate`, latest.sRate || product.sellingRate || 0);
+          setValue(`items.${index}.mrp`, latest.mrp || product.mrp || 0);
+        } else {
+          setValue(`items.${index}.pRate`, product.purchaseRate || 0);
+          setValue(`items.${index}.wRate`, product.wholesaleRate || 0);
+          setValue(`items.${index}.sRate`, product.sellingRate || 0);
+          setValue(`items.${index}.mrp`, product.mrp || 0);
+        }
+      } catch (e) {
+        setValue(`items.${index}.pRate`, product.purchaseRate || 0);
+        setValue(`items.${index}.wRate`, product.wholesaleRate || 0);
+        setValue(`items.${index}.sRate`, product.sellingRate || 0);
+        setValue(`items.${index}.mrp`, product.mrp || 0);
+      }
+    }
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (data: PurchaseFormValues) => api.post('/purchases', data),
+    onSuccess: () => {
+      toast.success('Purchase recorded successfully!');
+
+      setTimeout(() => {
+        if (printAfterSaveRef.current) {
+          window.print();
+        }
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        queryClient.invalidateQueries({ queryKey: ['nextEntryNo'] });
+        queryClient.invalidateQueries({ queryKey: ['purchases'] });
+        reset();
+        navigate('/purchase');
+      }, 100);
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error('Failed to record purchase. Please check your inputs.');
+    }
+  });
+
+  const onSubmit = (data: PurchaseFormValues) => {
+    if (!data.supplierId) {
+      toast.error('Please select a Supplier before saving.');
+      return;
+    }
+    if (!data.paymentModeId) {
+      toast.error('Please select a Payment Mode before saving.');
+      return;
+    }
+
+    const validItems = data.items.filter(item => item.productId > 0);
+    if (validItems.length === 0) {
+      toast.error('Please add at least one product before saving.');
+      return;
+    }
+
+    const payload = {
+      ...data,
+      supplierInvoiceNo: data.invoiceNo,
+      invoiceNo: data.entryNo,
+      invoiceDate: data.invoiceDate ? new Date(data.invoiceDate).toISOString() : null,
+      subtotal: data.totalAmount,
+      discount: data.totalDiscount,
+      transportCharge: data.transportCharge,
+      wages: data.wages,
+      tax: data.tax || 0,
+      grandTotal: data.netAmount,
+      items: validItems.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        rate: item.pRate,
+        wRate: item.wRate,
+        sRate: item.sRate,
+        mrp: item.mrp,
+        tax: item.tax || 0,
+        amount: item.total,
+      }))
+    };
+
+    setPendingSavePayload(payload);
+    setIsSaveModalOpen(true);
+  };
+
+  const handleConfirmSave = (print: boolean) => {
+    printAfterSaveRef.current = print;
+    setIsSaveModalOpen(false);
+    if (pendingSavePayload) {
+      createMutation.mutate(pendingSavePayload as any);
+      setPendingSavePayload(null);
+    }
+  };
+
+  const onError = (errors: any) => {
+    let errorMessage = 'Validation failed. Please ensure all items have a Rate and Quantity > 0.';
+
+    if (errors.supplierId) {
+      errorMessage = 'Please select a Supplier before saving.';
+    } else if (errors.paymentModeId) {
+      errorMessage = 'Please select a Payment Mode before saving.';
+    } else if (errors.items && Array.isArray(errors.items)) {
+      for (const item of errors.items) {
+        if (item?.quantity?.message === 'Quantity must be > 0') {
+          errorMessage = 'Validation failed: Quantity must be greater than 0.';
+          break;
+        }
+        if (item?.pRate?.message === 'Purchase Rate is required' || item?.pRate) {
+          errorMessage = 'Validation failed: Rate is required for all items.';
+          break;
+        }
+      }
+    } else if (errors.items) {
+      errorMessage = 'Please add at least one product before saving.';
+    }
+
+    toast.error(errorMessage);
+    console.error(errors);
+  };
+
+  const handleClear = () => {
+    reset({
+      entryNo: nextEntryData?.entryNo || 'Generating...',
+      invoiceNo: '',
+      invoiceDate: new Date().toISOString().split('T')[0],
+      supplierId: 0,
+      date: new Date().toISOString().split('T')[0],
+      paymentModeId: 0,
+      items: [{ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 }],
+      totalAmount: 0,
+      totalDiscountPercent: '' as any,
+      totalDiscount: '' as any,
+      transportCharge: '' as any,
+      wages: '' as any,
+      roundOff: '' as any,
+      netAmount: 0
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts if user is typing in an input/textarea unless it's a function key or escape
+
+      if (e.key === 'F10') {
+        e.preventDefault();
+        handleSubmit(onSubmit as any, onError)();
+      } else if (e.key === 'Escape') {
+        if (isSupplierModalOpen || isSaveModalOpen || isLeaveModalOpen) {
+          setIsSupplierModalOpen(false);
+          setIsSaveModalOpen(false);
+          setIsLeaveModalOpen(false);
+        } else {
+          setIsLeaveModalOpen(true);
+        }
+      } else if (e.key === 'F2') {
+        e.preventDefault();
+        append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 });
+        setTimeout(() => {
+          const inputs = document.querySelectorAll<HTMLElement>('[data-row-product] input');
+          if (inputs.length > 0) inputs[inputs.length - 1].focus();
+        }, 100);
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        handleClear();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSubmit, isSupplierModalOpen, isSaveModalOpen, isLeaveModalOpen, append, navigate, onSubmit, onError, handleClear]);
+
+  const addSupplierMutation = useMutation({
+    mutationFn: (data: any) => api.post('/suppliers', data),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setIsSupplierModalOpen(false);
+      setNewSupplier({ name: '', phone: '', address: '', state: '' });
+      if (res.data && res.data.id) {
+        setValue('supplierId', res.data.id);
+      }
+    },
+    onError: () => {
+      toast.error('Failed to add supplier.');
+    }
+  });
+
+  const handleQuickAddSupplier = () => {
+    if (!newSupplier.name) return;
+    if (settings?.enableTax && !newSupplier.state) {
+      toast.error('State is mandatory when Tax is enabled.');
+      return;
+    }
+    addSupplierMutation.mutate(newSupplier);
+  };
+
+
+
+
+
+  // Keyboard shortcuts (F10 Save, Esc Close, F4 Reset)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F10') {
+        e.preventDefault();
+        handleSubmit(onSubmit as any, onError)();
+      } else if (e.key === 'Escape') {
+        if (isSupplierModalOpen || isSaveModalOpen || isLeaveModalOpen) {
+          setIsSupplierModalOpen(false);
+          setIsSaveModalOpen(false);
+          setIsLeaveModalOpen(false);
+        } else {
+          setIsLeaveModalOpen(true);
+        }
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        handleClear();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSubmit, isSupplierModalOpen, isSaveModalOpen, isLeaveModalOpen, onSubmit, onError]);
+
+  const selectedSupplierId = watch('supplierId');
+  const selectedSupplier = suppliers.find((s: any) => s.id === Number(selectedSupplierId));
+
+  // ─── Mobile View State & Handlers (Matches mobile/src/app/(tabs)/purchase-entry.tsx) ───
+  const [mobileSearch, setMobileSearch] = useState('');
+  const [isMobileConfirmOpen, setIsMobileConfirmOpen] = useState(false);
+  const [isMobileSupplierPickerOpen, setIsMobileSupplierPickerOpen] = useState(false);
+  const [mobileSupplierSearch, setMobileSupplierSearch] = useState('');
+  const [isMobileEditItemOpen, setIsMobileEditItemOpen] = useState(false);
+  const [mobileEditingIndex, setMobileEditingIndex] = useState<number | null>(null);
+  const [mobileEditQty, setMobileEditQty] = useState('');
+  const [mobileEditPRate, setMobileEditPRate] = useState('');
+  const [mobileEditSRate, setMobileEditSRate] = useState('');
+  const [mobileEditMrp, setMobileEditMrp] = useState('');
+  const [mobileEditDiscPct, setMobileEditDiscPct] = useState('');
+
+  // Default payment mode if none selected
+  useEffect(() => {
+    if (!watch('paymentModeId') && paymentModes.length > 0) {
+      const credit = paymentModes.find((m: any) => m.name.toLowerCase() === 'credit');
+      setValue('paymentModeId', credit ? credit.id : paymentModes[0].id);
+    }
+  }, [paymentModes, setValue, watch]);
+
+  const handleMobileAddToCart = (product: any) => {
+    const currentItems = getValues('items') || [];
+    const existingIdx = currentItems.findIndex((it: any) => Number(it.productId) === Number(product.id));
+
+    if (existingIdx >= 0) {
+      const curQty = Number(currentItems[existingIdx].quantity) || 0;
+      const newQty = curQty + 1;
+      setValue(`items.${existingIdx}.quantity`, newQty, { shouldValidate: true });
+      const pRate = Number(currentItems[existingIdx].pRate) || 0;
+      const discAmt = Number(currentItems[existingIdx].discAmt) || 0;
+      setValue(`items.${existingIdx}.total`, Number(((newQty * pRate) - discAmt).toFixed(2)), { shouldValidate: true });
+    } else {
+      const pRate = Number(product.purchaseRate) || 0;
+      const wRate = Number(product.wholesaleRate) || 0;
+      const sRate = Number(product.sellingRate) || 0;
+      const mrp = Number(product.mrp) || sRate;
+
+      const newItem = {
+        productId: Number(product.id),
+        quantity: 1,
+        unit: product.unit?.shortCode || product.unit?.name || 'Nos',
+        pRate,
+        wRate,
+        sRate,
+        mrp,
+        discPercent: 0,
+        discAmt: 0,
+        tax: 0,
+        total: pRate,
+      };
+
+      if (currentItems.length === 1 && !currentItems[0].productId) {
+        setValue('items.0', newItem, { shouldValidate: true });
+      } else {
+        append(newItem);
+      }
+    }
+  };
+
+  const handleMobileRemoveOne = (originalIndex: number) => {
+    const currentItems = getValues('items') || [];
+    const it = currentItems[originalIndex];
+    if (!it) return;
+    const curQty = Number(it.quantity) || 0;
+    if (curQty <= 1) {
+      if (currentItems.length === 1) {
+        setValue('items.0', { productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, tax: 0, total: 0 }, { shouldValidate: true });
+      } else {
+        remove(originalIndex);
+      }
+    } else {
+      const newQty = curQty - 1;
+      setValue(`items.${originalIndex}.quantity`, newQty, { shouldValidate: true });
+      const pRate = Number(it.pRate) || 0;
+      const discAmt = Number(it.discAmt) || 0;
+      setValue(`items.${originalIndex}.total`, Number(((newQty * pRate) - discAmt).toFixed(2)), { shouldValidate: true });
+    }
+  };
+
+  const handleMobileDeleteItem = (originalIndex: number) => {
+    const currentItems = getValues('items') || [];
+    if (currentItems.length === 1) {
+      setValue('items.0', { productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, tax: 0, total: 0 }, { shouldValidate: true });
+    } else {
+      remove(originalIndex);
+    }
+  };
+
+  const handleMobileOpenEdit = (originalIndex: number) => {
+    const currentItems = getValues('items') || [];
+    const it = currentItems[originalIndex];
+    if (!it) return;
+    setMobileEditingIndex(originalIndex);
+    setMobileEditQty(String(it.quantity || 1));
+    setMobileEditPRate(String(it.pRate || 0));
+    setMobileEditSRate(String(it.sRate || 0));
+    setMobileEditMrp(String(it.mrp || 0));
+    setMobileEditDiscPct(String(it.discPercent || 0));
+    setIsMobileEditItemOpen(true);
+  };
+
+  const handleMobileSaveEdit = () => {
+    if (mobileEditingIndex === null) return;
+    const qty = parseFloat(mobileEditQty) || 1;
+    const pRate = parseFloat(mobileEditPRate) || 0;
+    const sRate = parseFloat(mobileEditSRate) || 0;
+    const mrp = parseFloat(mobileEditMrp) || 0;
+    const discPct = parseFloat(mobileEditDiscPct) || 0;
+    const gross = qty * pRate;
+    const discAmt = parseFloat(((gross * discPct) / 100).toFixed(2));
+    const total = parseFloat((gross - discAmt).toFixed(2));
+
+    setValue(`items.${mobileEditingIndex}.quantity`, qty, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.pRate`, pRate, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.sRate`, sRate, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.mrp`, mrp, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.discPercent`, discPct, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.discAmt`, discAmt, { shouldValidate: true });
+    setValue(`items.${mobileEditingIndex}.total`, total, { shouldValidate: true });
+    setIsMobileEditItemOpen(false);
+    setMobileEditingIndex(null);
+  };
+
+  const filteredMobileProducts = products.filter((p: any) =>
+    (p.name || '').toLowerCase().includes(mobileSearch.toLowerCase()) ||
+    (p.code || '').toLowerCase().includes(mobileSearch.toLowerCase())
+  );
+
+  const filteredMobileSuppliers = suppliers.filter((s: any) =>
+    (s.name || '').toLowerCase().includes(mobileSupplierSearch.toLowerCase()) ||
+    (s.phone || '').includes(mobileSupplierSearch)
+  );
+
+  const validMobileCartItems = (watch('items') || []).map((it, idx) => ({ ...it, originalIndex: idx })).filter(
+    (it: any) => it.productId && Number(it.productId) > 0
+  );
+
+  const mobileCartTotalQty = validMobileCartItems.reduce((s: number, it: any) => s + (Number(it.quantity) || 0), 0);
+
+  return (
+    <div className="absolute inset-0 bg-[#F3F4F6] flex flex-col font-sans overflow-hidden z-10">
+
+      {/* ─── DESKTOP VIEW (MD and above) ─── */}
+      <div className="hidden md:flex md:flex-col md:flex-1 md:min-h-0 md:overflow-hidden">
+
+        {/* Top Bar */}
+        <div className="bg-[#0B355B] text-white px-2 sm:px-4 py-2 flex flex-wrap gap-2 justify-between items-center shrink-0">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleSubmit(onSubmit as any, onError)}
+              className="bg-[#059669] hover:bg-[#047857] text-white px-3 sm:px-4 py-2 sm:py-1.5 rounded flex items-center gap-2 font-bold text-[13px] transition-colors"
+            >
+              <CheckCircle size={16} /> <span className="hidden sm:inline">SAVE PURCHASE (F10)</span><span className="sm:hidden">Save</span>
+            </button>
+          </div>
+          <button
+            onClick={() => setIsLeaveModalOpen(true)}
+            className="text-white hover:text-white/80 transition-colors flex items-center gap-1.5"
+          >
+            <ArrowLeft size={16} /> <span className="hidden sm:inline">Back (Esc)</span>
+          </button>
+        </div>
+
+        <form className="flex flex-col flex-1 min-h-0 overflow-hidden" onSubmit={handleSubmit(onSubmit as any, onError)}>
+
+          {/* Header Section */}
+        <div className="bg-white p-3 sm:p-4 border-b border-[#E5E7EB] shrink-0">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:flex lg:flex-row gap-2 sm:gap-4">
+
+            <div className="w-full lg:flex-1 lg:max-w-[200px]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Entry No *</label>
+              <input
+                {...register('entryNo')}
+                type="text"
+                readOnly
+                className="w-full px-2 py-1.5 border border-[#D1D5DB] bg-[#F9FAFB] rounded text-[13px] font-bold outline-none"
+              />
+            </div>
+
+            <div className="w-full lg:flex-1 lg:max-w-[250px]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Supplier Invoice number</label>
+              <input
+                {...register('invoiceNo')}
+                type="text"
+                placeholder="Supplier Bill No"
+                className="w-full px-2 py-1.5 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+              />
+            </div>
+
+            <div className="w-full col-span-2 lg:col-span-1 lg:flex-[2]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Supplier Name (Searchable Dropdown) *</label>
+              <div className="flex flex-col gap-1">
+                <div className="flex-1 w-full">
+                  <SearchableSelect
+                    value={watch('supplierId')}
+                    onChange={(val) => setValue('supplierId', Number(val))}
+                    options={[
+                      { label: 'Click or type supplier name / phone...', value: 0 },
+                      ...suppliers.map((s: any) => ({ label: `${s.name} - ${s.phone || ''}`, value: s.id }))
+                    ]}
+                  />
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <button type="button" onClick={() => setIsSupplierModalOpen(true)} className="bg-[#059669] hover:bg-[#047857] text-white px-2 py-1 rounded transition-colors flex items-center gap-1 text-[11px] font-bold">
+                    <Plus size={12} /> Add Supplier
+                  </button>
+                  <span className="text-[11px] text-[#6B7280] text-right flex-1 ml-2 flex flex-col items-end">
+                    <span>{selectedSupplier ? `${selectedSupplier.address || 'Standard Vendor'}` : 'Standard Vendor'}</span>
+                    {selectedSupplier?.state && <span className="font-bold text-[#1F2937]">{selectedSupplier.state}</span>}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full lg:flex-1 lg:max-w-[200px]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Invoice date</label>
+              <input
+                {...register('invoiceDate')}
+                type="date"
+                className="w-full px-2 py-1.5 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+              />
+            </div>
+
+            <div className="w-full lg:flex-1 lg:max-w-[200px]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Entry Date</label>
+              <input
+                {...register('date')}
+                type="date"
+                className="w-full px-2 py-1.5 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+              />
+            </div>
+
+            <div className="w-full lg:flex-1 lg:max-w-[200px]">
+              <label className="block text-[11px] font-bold text-[#1F2937] mb-1">Mode</label>
+              <select
+                {...register('paymentModeId')}
+                className="w-full px-2 py-1.5 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] bg-white"
+              >
+                <option value="0">Select Payment Mode...</option>
+                {paymentModes.map((pm: any) => (
+                  <option key={pm.id} value={pm.id}>{pm.name}</option>
+                ))}
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="entry-action-bar shrink-0 flex flex-wrap justify-end gap-2 p-2 bg-white border-b border-[#E5E7EB]">
+          <button
+            type="button"
+            onClick={() => {
+              append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 });
+              setTimeout(() => {
+                const inputs = document.querySelectorAll<HTMLElement>('[data-row-product] input');
+                if (inputs.length > 0) inputs[inputs.length - 1].focus();
+              }, 100);
+            }}
+            className="border border-[#0B355B] text-[#0B355B] hover:bg-[#0B355B] hover:text-white px-3 py-1 rounded flex items-center gap-1 text-[12px] transition-colors font-bold"
+          >
+            <PlusCircle size={14} /> Add Row (F2)
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            className="border border-[#EF4444] text-[#EF4444] hover:bg-[#EF4444] hover:text-white px-3 py-1 rounded flex items-center gap-1 text-[12px] transition-colors font-bold"
+          >
+            <RotateCcw size={14} /> Clear (F4)
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/purchase')}
+            className="border border-[#0B355B] text-[#0B355B] hover:bg-[#0B355B] hover:text-white px-3 py-1 rounded flex items-center gap-1 text-[12px] transition-colors font-bold"
+          >
+            <List size={14} /> Purchase List
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/reports/purchase')}
+            className="border border-[#0B355B] text-[#0B355B] hover:bg-[#0B355B] hover:text-white px-3 py-1 rounded flex items-center gap-1 text-[12px] transition-colors font-bold"
+          >
+            <FileText size={14} /> Purchase Report
+          </button>
+          <ShortcutHelpButton />
+        </div>
+
+        {/* Items Grid */}
+        <div className="entry-table-wrapper flex-1 min-h-0 overflow-auto custom-scrollbar bg-white border-b border-[#E5E7EB]">
+          <table className="w-full border-collapse border border-[#E5E7EB] whitespace-nowrap md:min-w-[1200px] responsive-table">
+            <thead>
+              <tr className="bg-[#0F172A] text-white">
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-10">#</th>
+                <th className="px-2 py-2 text-left text-[12px] font-bold border border-[#334155]">Item Code / Name</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-20">Qty</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-20">Unit</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">PRate</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">WRate</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">SRate</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">MRP</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-20">Disc %</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">Disc Amt</th>
+                {settings?.enableTax && (
+                  <>
+                    <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-20">Tax %</th>
+                    <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-24">Tax Amt</th>
+                  </>
+                )}
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-28">Total</th>
+                <th className="px-2 py-2 text-center text-[12px] font-bold border border-[#334155] w-16">Act</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map((field, index) => (
+                <tr key={field.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB]">
+                  <td data-label="#" className="px-2 py-1 text-center text-[13px] border-r border-[#E5E7EB]">{index + 1}</td>
+                  <td data-label="Product" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <div data-row-product={index} onKeyDownCapture={(e) => {
+                      if (e.ctrlKey && e.key === 'Delete' && fields.length > 1) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        remove(index);
+                        setTimeout(() => {
+                          const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${Math.max(0, index - 1)}"] input`);
+                          if (selectEl) selectEl.focus();
+                        }, 50);
+                      }
+                    }}>
+                      <SearchableSelect
+                        value={watch(`items.${index}.productId`)}
+                        autoFocus={index === fields.length - 1 && watch(`items.${index}.productId`) === 0}
+                        onChange={(val) => {
+                          setValue(`items.${index}.productId`, Number(val));
+                          handleProductChange(index, String(val));
+                          if (Number(val) === 0) {
+                            if (index === fields.length - 1) {
+                              append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 });
+                              setTimeout(() => {
+                                const inputs = document.querySelectorAll<HTMLElement>('[data-row-product] input');
+                                if (inputs.length > 0) inputs[inputs.length - 1].focus();
+                              }, 100);
+                            } else {
+                              setTimeout(() => {
+                                const selectEl = document.querySelector<HTMLElement>(`[data-row-product="${index + 1}"] input`);
+                                if (selectEl) selectEl.focus();
+                              }, 100);
+                            }
+                          } else {
+                            setTimeout(() => focusCell(index, 1), 100);
+                          }
+                        }}
+                        options={[
+                          { label: 'Type product name / code...', value: 0 },
+                          ...products.map((p: any) => ({ label: `${p.code} - ${p.name}`, value: p.id }))
+                        ]}
+                      />
+                    </div>
+                  </td>
+                  <td data-label="Qty" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.quantity`)}
+                      data-row={index} data-col={1}
+                      type="number" min="1" placeholder="0"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 1, 7)}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-center"
+                    />
+                  </td>
+                  <td data-label="Unit" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input {...register(`items.${index}.unit`)} type="text" readOnly tabIndex={-1} className="w-full px-1 py-1 bg-transparent text-[13px] outline-none text-center" />
+                  </td>
+                  <td data-label="PRate" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.pRate`)}
+                      data-row={index} data-col={2}
+                      type="number" step="0.01" placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 2, 7)}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  <td data-label="WRate" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.wRate`)}
+                      data-row={index} data-col={3}
+                      type="number" step="0.01" placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 3, 7)}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  <td data-label="SRate" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.sRate`)}
+                      data-row={index} data-col={4}
+                      type="number" step="0.01" placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 4, 7)}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  <td data-label="MRP" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.mrp`)}
+                      data-row={index} data-col={5}
+                      type="number" step="0.01" placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 5, 7)}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  <td data-label="Disc %" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.discPercent`)}
+                      data-row={index} data-col={6}
+                      type="number" step="0.01" placeholder="0"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 6, 7)}
+                      onChange={(e) => {
+                        register(`items.${index}.discPercent`).onChange(e);
+                        const pct = Number(e.target.value) || 0;
+                        const rate = Number(watch(`items.${index}.pRate`)) || 0;
+                        const q = Number(watch(`items.${index}.quantity`)) || 0;
+                        const amt = (rate * q * pct) / 100;
+                        setValue(`items.${index}.discAmt`, Number(amt.toFixed(2)));
+                      }}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  <td data-label="Disc Amt" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input
+                      {...register(`items.${index}.discAmt`)}
+                      data-row={index} data-col={7}
+                      type="number" step="0.01" placeholder="0.00"
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => handleCellKey(e, index, 7, 7)}
+                      onChange={(e) => {
+                        register(`items.${index}.discAmt`).onChange(e);
+                        const amt = Number(e.target.value) || 0;
+                        const rate = Number(watch(`items.${index}.pRate`)) || 0;
+                        const q = Number(watch(`items.${index}.quantity`)) || 0;
+                        const totalGross = rate * q;
+                        if (totalGross > 0) {
+                          const pct = (amt / totalGross) * 100;
+                          setValue(`items.${index}.discPercent`, Number(pct.toFixed(2)));
+                        } else {
+                          setValue(`items.${index}.discPercent`, 0);
+                        }
+                      }}
+                      className="w-full px-2 py-1 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] focus:bg-blue-50 transition-colors text-right"
+                    />
+                  </td>
+                  {settings?.enableTax && (
+                    <>
+                      <td data-label="Tax %" className="px-2 py-1 border-r border-[#E5E7EB] bg-gray-50">
+                        <div className="w-full px-2 py-1 bg-transparent border-none text-[13px] text-center text-gray-500 font-bold outline-none">
+                          {products.find((p: any) => p.id === watch(`items.${index}.productId`))?.taxPercent || 0}%
+                        </div>
+                      </td>
+                      <td data-label="Tax Amt" className="px-2 py-1 border-r border-[#E5E7EB]">
+                        <input
+                          {...register(`items.${index}.tax`)}
+                          type="number" step="0.01" readOnly tabIndex={-1}
+                          className="w-full px-2 py-1 bg-transparent border-none text-[13px] text-right text-gray-500 outline-none"
+                        />
+                      </td>
+                    </>
+                  )}
+                  <td data-label="Total" className="px-2 py-1 border-r border-[#E5E7EB]">
+                    <input {...register(`items.${index}.total`)} type="number" readOnly tabIndex={-1} className="w-full px-2 py-1 bg-transparent text-[13px] outline-none text-right font-bold" />
+                  </td>
+                  <td data-label="Action" className="px-2 py-1 text-center">
+                    <div className="flex justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 })}
+                        className="bg-[#10B981] text-white p-1.5 rounded hover:bg-[#059669] transition-colors shadow-sm"
+                        title="Add Row"
+                      >
+                        <Plus size={14} strokeWidth={3} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(index)}
+                        disabled={fields.length === 1}
+                        className="bg-red-50 text-red-500 p-1.5 rounded hover:bg-red-500 hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-red-50 disabled:hover:text-red-500"
+                        title="Remove Row"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer Calculation Area */}
+        <div className="bg-white border-t border-[#E5E7EB] p-3 sm:p-4 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="entry-footer-totals flex flex-col md:flex-row items-stretch md:items-center gap-4 md:gap-6">
+
+            <div className="w-full md:flex-1 flex flex-col gap-1">
+              <label className="text-[14px] font-extrabold text-[#1F2937] uppercase">Total Quantity:</label>
+              <input
+                value={watch('items').reduce((acc: number, item: any) => acc + (Number(item.quantity) || 0), 0)}
+                readOnly
+                className="w-full px-3 py-2 border border-[#D1D5DB] bg-[#F9FAFB] rounded text-[20px] outline-none text-right font-black text-[#1F2937]"
+              />
+            </div>
+
+            <div className="w-full md:flex-1 flex flex-col gap-1">
+              <label className="text-[14px] font-extrabold text-[#1F2937] uppercase">Total Amount:</label>
+              <input
+                {...register('totalAmount')}
+                type="number"
+                readOnly
+                className="w-full px-3 py-2 border border-[#D1D5DB] bg-[#F9FAFB] rounded text-[20px] outline-none text-right font-black text-[#1F2937]"
+              />
+            </div>
+
+            <div className="w-full md:flex-1 flex flex-col gap-1">
+              <label className="text-[14px] font-extrabold text-[#1F2937] uppercase">Total Discount:</label>
+              <div className="flex gap-2 w-full">
+                <div className="relative w-1/2">
+                  <input
+                    {...register('totalDiscountPercent')}
+                    type="number"
+                    step="0.01"
+                    onChange={(e) => {
+                      register('totalDiscountPercent').onChange(e);
+                      const percent = Number(e.target.value) || 0;
+                      const amount = (watch('totalAmount') * percent) / 100;
+                      setValue('totalDiscount', Number(amount.toFixed(2)));
+                    }}
+                    className="w-full pl-2 pr-6 py-2 border border-[#D1D5DB] rounded text-[16px] outline-none focus:border-[#3B82F6] text-right font-black text-[#1F2937]"
+                    placeholder="0"
+                  />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-800 font-black text-[14px] pointer-events-none">%</span>
+                </div>
+                <div className="relative w-1/2">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-800 font-black text-[14px] pointer-events-none">{settings?.currencySymbol || 'RM'}</span>
+                  <input
+                    {...register('totalDiscount')}
+                    type="number"
+                    step="0.01"
+                    onChange={(e) => {
+                      register('totalDiscount').onChange(e);
+                      const amt = Number(e.target.value) || 0;
+                      const totalAmt = watch('totalAmount');
+                      if (totalAmt > 0) {
+                        setValue('totalDiscountPercent', Number(((amt / totalAmt) * 100).toFixed(2)));
+                      } else {
+                        setValue('totalDiscountPercent', 0);
+                      }
+                    }}
+                    className="w-full pl-8 pr-3 py-2 border border-[#D1D5DB] rounded text-[16px] outline-none focus:border-[#3B82F6] text-right font-black text-[#EF4444]"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="w-full md:flex-[2] flex flex-col sm:flex-row gap-4 sm:gap-6 justify-end items-end">
+              <div className="w-full sm:w-32 flex flex-col gap-1">
+                <label className="text-[13px] font-extrabold text-[#1F2937] uppercase">Transport Chg.</label>
+                <input
+                  {...register('transportCharge')}
+                  type="number"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-[#D1D5DB] bg-white focus:bg-[#F0FDF4] rounded text-[16px] outline-none text-right font-black focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] text-black"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div className="w-full sm:w-32 flex flex-col gap-1">
+                <label className="text-[13px] font-extrabold text-[#1F2937] uppercase">Wages</label>
+                <input
+                  {...register('wages')}
+                  type="number"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-[#D1D5DB] bg-white focus:bg-[#F0FDF4] rounded text-[16px] outline-none text-right font-black focus:border-[#10B981] focus:ring-1 focus:ring-[#10B981] text-black"
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Bottom Actions Bar */}
+        <div className="bg-white border-t border-gray-200 px-4 py-3 flex flex-col md:flex-row justify-between items-center gap-3 md:gap-0 mt-auto shrink-0">
+          <div className="flex flex-nowrap justify-between sm:justify-center gap-1 sm:gap-2 w-full md:w-auto">
+            <button
+              type="button"
+              onClick={() => append({ productId: 0, quantity: '' as any, unit: 'Nos', pRate: '' as any, wRate: '' as any, sRate: '' as any, mrp: '' as any, discPercent: '' as any, discAmt: '' as any, total: 0 })}
+              className="bg-[#2563EB] text-white text-[10px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-sm flex items-center gap-1 cursor-pointer hover:bg-[#1D4ED8] whitespace-nowrap"
+            >
+              <span className="opacity-70 border-r border-[#60A5FA] pr-1 mr-1">F2</span> Add Row
+            </button>
+
+            <button
+              type="button"
+              disabled={createMutation.isPending}
+              className="bg-[#059669] text-white text-[10px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-sm flex items-center gap-1 cursor-pointer hover:bg-[#047857] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              onClick={handleSubmit(onSubmit as any, onError)}
+            >
+              <span className="opacity-70 border-r border-[#34D399] pr-1 mr-1">F10</span>
+              {createMutation.isPending ? 'Saving...' : 'Save Purchase'}
+            </button>
+            <button
+              type="button"
+              className="bg-[#0891B2] text-white text-[10px] sm:text-[11px] font-bold px-2 sm:px-3 py-1.5 rounded-sm flex items-center gap-1 cursor-pointer hover:bg-[#0E7490] whitespace-nowrap"
+              onClick={() => setIsLeaveModalOpen(true)}
+            >
+              <span className="opacity-70 border-r border-[#67E8F9] pr-1 mr-1">Esc</span> Dashboard
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-4 w-full md:w-auto justify-between md:justify-end border-t border-gray-200 md:border-none pt-3 md:pt-0">
+            <span className="text-[16px] sm:text-[20px] font-extrabold text-[#1F2937] uppercase tracking-wider">NET PURCHASE AMOUNT:</span>
+            <span className="entry-net-amount text-[28px] sm:text-[36px] font-black text-[#059669]">
+              {formatCurrency(watch('netAmount') || 0)}
+            </span>
+          </div>
+        </div>
+
+      </form>
+      </div>
+
+      {/* ─── MOBILE VIEW (< MD) ─── */}
+      <div className="md:hidden flex flex-col flex-1 min-h-0 overflow-hidden relative bg-[#F3F4F6]">
+        {/* Mobile Header */}
+        <div className="bg-gradient-to-r from-[#0B355B] to-[#1E5F8A] text-white px-4 py-3 shrink-0 shadow-md">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-extrabold text-white leading-tight">Purchase Entry</h1>
+              <p className="text-xs text-blue-200 mt-0.5 font-medium">Tap a product to add to order</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {validMobileCartItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm('Clear all items from purchase order?')) handleClear();
+                  }}
+                  className="flex items-center gap-1.5 bg-red-500/20 border border-red-500/40 text-red-200 px-2.5 py-1.5 rounded-lg text-xs font-bold active:bg-red-500/30 transition-colors"
+                >
+                  <RefreshCw size={13} />
+                  <span>Clear</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsLeaveModalOpen(true)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Search Bar */}
+        <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0">
+          <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 h-10 gap-2">
+            <Search size={16} className="text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={mobileSearch}
+              onChange={(e) => setMobileSearch(e.target.value)}
+              placeholder="Search product name or code..."
+              className="flex-1 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none font-medium"
+            />
+            {mobileSearch.length > 0 && (
+              <button type="button" onClick={() => setMobileSearch('')} className="text-slate-400 hover:text-slate-600">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Product Catalog Cards */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 pb-24">
+          {filteredMobileProducts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+              <p className="text-sm font-semibold">No products found</p>
+            </div>
+          ) : (
+            filteredMobileProducts.map((item: any) => {
+              const inCart = validMobileCartItems.find((c: any) => Number(c.productId) === Number(item.id));
+              const pRate = Number(item.purchaseRate) || 0;
+              const sRate = Number(item.sellingRate) || 0;
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => handleMobileAddToCart(item)}
+                  className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-sm flex items-center justify-between active:scale-[0.99] transition-all cursor-pointer hover:border-blue-300 select-none"
+                >
+                  <div className="flex-1 min-w-0 pr-3">
+                    <p className="font-bold text-slate-800 text-sm leading-snug line-clamp-1">{item.name}</p>
+                    <p className="text-[11px] text-slate-400 font-semibold tracking-wide mt-0.5">{item.code}</p>
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        P: {formatCurrency(pRate)}
+                      </span>
+                      <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        S: {formatCurrency(sRate)}
+                      </span>
+                      <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        Stk: {item.currentStock || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0">
+                    {inCart ? (
+                      <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-[#0B355B] px-2.5 py-1 rounded-lg font-black text-xs">
+                        <Truck size={13} />
+                        <span>{inCart.quantity}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold text-white shadow-sm bg-[#0B355B]">
+                        <Plus size={13} />
+                        <span>Add</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Floating Order Bar */}
+        {validMobileCartItems.length > 0 && (
+          <div
+            onClick={() => setIsMobileConfirmOpen(true)}
+            className="fixed bottom-4 left-3 right-3 z-30 bg-[#0B355B] text-white rounded-2xl p-3.5 shadow-2xl flex items-center justify-between cursor-pointer active:scale-[0.99] transition-transform"
+          >
+            <div className="flex items-center gap-3">
+              <div className="relative bg-blue-50 text-[#0B355B] p-2 rounded-xl">
+                <Truck size={20} />
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-[#0B355B]">
+                  {mobileCartTotalQty}
+                </span>
+              </div>
+              <div>
+                <p className="text-lg font-black leading-tight text-white">
+                  {formatCurrency(watch('netAmount') || 0)}
+                </p>
+                <p className="text-xs text-blue-200 font-medium">
+                  {validMobileCartItems.length} item{validMobileCartItems.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3.5 py-2 rounded-xl font-bold text-sm text-white">
+              <span>Confirm</span>
+              <ChevronRight size={18} />
+            </div>
+          </div>
+        )}
+
+        {/* Confirm Purchase Sheet / Modal */}
+        {isMobileConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex flex-col justify-end animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-200">
+              <div className="flex justify-between items-center px-4 py-3.5 border-b border-slate-100 bg-slate-50">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800">Confirm Purchase</h3>
+                  <p className="text-[11px] text-slate-500">Entry: {watch('entryNo') || 'Generating...'}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileConfirmOpen(false)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Items in Order */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Items ({validMobileCartItems.length})
+                  </p>
+                  <div className="space-y-2">
+                    {validMobileCartItems.map((item: any) => {
+                      const prod = products.find((p: any) => p.id === Number(item.productId));
+                      const itemName = prod?.name || `Product #${item.productId}`;
+                      const itemCode = prod?.code || '';
+                      const discPercent = Number(item.discPercent) || 0;
+
+                      return (
+                        <div key={item.originalIndex} className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-2">
+                          <div
+                            onClick={() => handleMobileOpenEdit(item.originalIndex)}
+                            className="flex justify-between items-start cursor-pointer"
+                          >
+                            <div className="flex-1 pr-2">
+                              <p className="text-sm font-bold text-slate-800 line-clamp-1">{itemName}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                {itemCode && `${itemCode} · `}P.Rate: {formatCurrency(item.pRate)} · S.Rate: {formatCurrency(item.sRate)}
+                                {discPercent > 0 && ` · Disc: ${discPercent}%`}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-extrabold text-emerald-600">
+                                {formatCurrency(item.total)}
+                              </p>
+                              <span className="text-[10px] text-slate-400 font-medium">tap to edit</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 pt-1 border-t border-slate-200/60">
+                            <button
+                              type="button"
+                              onClick={() => handleMobileRemoveOne(item.originalIndex)}
+                              className="text-red-500 hover:text-red-600 active:scale-90 transition-transform"
+                            >
+                              <MinusCircle size={22} />
+                            </button>
+                            <span className="text-base font-extrabold text-slate-800 min-w-[28px] text-center">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleMobileAddToCart(prod || { id: item.productId, purchaseRate: item.pRate, sellingRate: item.sRate })}
+                              className="text-emerald-500 hover:text-emerald-600 active:scale-90 transition-transform"
+                            >
+                              <PlusCircle size={22} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMobileDeleteItem(item.originalIndex)}
+                              className="ml-auto text-slate-400 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Supplier Selector */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Supplier *</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileSupplierPickerOpen(true)}
+                    className={`w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100 border rounded-xl transition-colors text-left ${
+                      !selectedSupplier ? 'border-red-300 bg-red-50/30' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Truck size={18} className={selectedSupplier ? 'text-slate-600' : 'text-red-500'} />
+                      <div className="truncate">
+                        <p className={`text-sm font-bold truncate ${selectedSupplier ? 'text-slate-800' : 'text-red-600'}`}>
+                          {selectedSupplier ? selectedSupplier.name : 'Select Supplier (Required)'}
+                        </p>
+                        {selectedSupplier?.phone && (
+                          <p className="text-xs text-slate-400">{selectedSupplier.phone}</p>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                  </button>
+                </div>
+
+                {/* Supplier Invoice No */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Supplier Invoice No</p>
+                  <input
+                    {...register('invoiceNo')}
+                    type="text"
+                    placeholder="e.g. INV-2024-001 (optional)"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+
+                {/* Payment Mode */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Payment Mode</p>
+                  <div className="flex flex-wrap gap-2">
+                    {paymentModes.map((pm: any) => {
+                      const isSelected = Number(watch('paymentModeId')) === Number(pm.id);
+                      return (
+                        <button
+                          key={pm.id}
+                          type="button"
+                          onClick={() => setValue('paymentModeId', pm.id)}
+                          className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition-all min-w-[70px] ${
+                            isSelected
+                              ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {pm.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Additional Charges */}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Additional Charges</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">Transport</label>
+                      <input
+                        {...register('transportCharge')}
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-500 mb-1">Wages</label>
+                      <input
+                        {...register('wages')}
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-right outline-none focus:border-blue-500 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Totals Summary */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2">
+                  <div className="flex justify-between text-xs text-slate-500 font-semibold">
+                    <span>Total Quantity:</span>
+                    <span className="text-slate-800 font-bold">{mobileCartTotalQty}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-500 font-semibold">
+                    <span>Sub Total:</span>
+                    <span className="text-slate-800 font-bold">{formatCurrency(watch('totalAmount') || 0)}</span>
+                  </div>
+                  {Number(watch('transportCharge')) > 0 && (
+                    <div className="flex justify-between text-xs text-slate-500 font-semibold">
+                      <span>Transport Charge:</span>
+                      <span className="text-slate-800 font-bold">+{formatCurrency(watch('transportCharge') || 0)}</span>
+                    </div>
+                  )}
+                  {Number(watch('wages')) > 0 && (
+                    <div className="flex justify-between text-xs text-slate-500 font-semibold">
+                      <span>Wages:</span>
+                      <span className="text-slate-800 font-bold">+{formatCurrency(watch('wages') || 0)}</span>
+                    </div>
+                  )}
+                  {Number(watch('totalDiscount')) > 0 && (
+                    <div className="flex justify-between text-xs text-red-500 font-semibold">
+                      <span>Total Discount:</span>
+                      <span>-{formatCurrency(watch('totalDiscount') || 0)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-slate-200 pt-2.5 flex justify-between items-center">
+                    <span className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Net Amount:</span>
+                    <span className="text-2xl font-black text-emerald-600">
+                      {formatCurrency(watch('netAmount') || 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Confirm / Save Button */}
+              <div className="p-4 border-t border-slate-200 bg-white shrink-0">
+                <button
+                  type="button"
+                  disabled={createMutation.isPending}
+                  onClick={() => {
+                    setIsMobileConfirmOpen(false);
+                    handleSubmit(onSubmit as any, onError)();
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 text-white py-3.5 rounded-xl font-extrabold text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all"
+                >
+                  <CheckCircle size={20} />
+                  <span>{createMutation.isPending ? 'SAVING...' : 'SAVE PURCHASE'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplier Picker Modal */}
+        {isMobileSupplierPickerOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex flex-col justify-end animate-in fade-in duration-200">
+            <div className="bg-white rounded-t-3xl max-h-[75vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-200">
+              <div className="flex justify-between items-center px-4 py-3.5 border-b border-slate-100 bg-slate-50">
+                <h3 className="text-base font-extrabold text-slate-800">Select Supplier</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSupplierPickerOpen(false)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-3 border-b border-slate-100 flex items-center gap-2">
+                <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl px-3 h-10 gap-2">
+                  <Search size={16} className="text-slate-400" />
+                  <input
+                    type="text"
+                    value={mobileSupplierSearch}
+                    onChange={(e) => setMobileSupplierSearch(e.target.value)}
+                    placeholder="Search supplier name or phone..."
+                    className="flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder-slate-400 font-medium"
+                    autoFocus
+                  />
+                  {mobileSupplierSearch.length > 0 && (
+                    <button type="button" onClick={() => setMobileSupplierSearch('')} className="text-slate-400">
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileSupplierPickerOpen(false);
+                    setIsSupplierModalOpen(true);
+                  }}
+                  className="bg-emerald-600 text-white px-3 h-10 rounded-xl text-xs font-bold flex items-center gap-1 shrink-0 shadow-sm"
+                >
+                  <Plus size={14} />
+                  <span>New</span>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {filteredMobileSuppliers.map((s: any) => {
+                  const isSelected = Number(watch('supplierId')) === Number(s.id);
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        setValue('supplierId', s.id);
+                        setIsMobileSupplierPickerOpen(false);
+                      }}
+                      className={`p-3.5 cursor-pointer hover:bg-slate-50 transition-colors ${
+                        isSelected ? 'bg-blue-50/70' : ''
+                      }`}
+                    >
+                      <p className={`text-sm font-bold ${isSelected ? 'text-[#0B355B]' : 'text-slate-800'}`}>
+                        {s.name}
+                      </p>
+                      {s.phone && <p className="text-xs text-slate-400">{s.phone}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Item Modal */}
+        {isMobileEditItemOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+              <div className="flex justify-between items-center px-4 py-3 border-b border-slate-100 bg-slate-50">
+                <h3 className="text-sm font-extrabold text-slate-800">Edit Item</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileEditItemOpen(false)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Quantity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={mobileEditQty}
+                    onChange={(e) => setMobileEditQty(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-base font-bold text-slate-800 outline-none focus:border-blue-500 text-right"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">P.Rate ({settings?.currencySymbol || '₹'})</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={mobileEditPRate}
+                      onChange={(e) => setMobileEditPRate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-base font-bold text-slate-800 outline-none focus:border-blue-500 text-right"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">S.Rate ({settings?.currencySymbol || '₹'})</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={mobileEditSRate}
+                      onChange={(e) => setMobileEditSRate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-xl text-base font-bold text-slate-800 outline-none focus:border-blue-500 text-right"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Discount (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={mobileEditDiscPct}
+                    onChange={(e) => setMobileEditDiscPct(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-base font-bold text-slate-800 outline-none focus:border-blue-500 text-right"
+                  />
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex justify-between items-center">
+                  <span className="text-xs font-bold text-emerald-800">Calculated Total</span>
+                  <span className="text-lg font-black text-emerald-600">
+                    {formatCurrency(
+                      ((parseFloat(mobileEditQty) || 0) * (parseFloat(mobileEditPRate) || 0)) *
+                      (1 - (parseFloat(mobileEditDiscPct) || 0) / 100)
+                    )}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleMobileSaveEdit}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-bold text-sm shadow-md transition-colors"
+                >
+                  Update Item
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* Quick Add Supplier Modal */}
+      {isSupplierModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded shadow-lg w-full max-w-md overflow-hidden flex flex-col">
+            <div className="bg-[#059669] text-white px-4 py-3 flex justify-between items-center">
+              <div className="flex items-center gap-2 font-bold text-[15px]">
+                <Plus size={18} /> Quick Add New Supplier
+              </div>
+              <button type="button" onClick={() => setIsSupplierModalOpen(false)} className="hover:text-gray-200">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 flex flex-col gap-4">
+              <div>
+                <label className="block text-[13px] font-bold text-[#1F2937] mb-1">Supplier Name *</label>
+                <input
+                  type="text"
+                  value={newSupplier.name}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] text-[#4B5563] mb-1">Mobile Number</label>
+                <input
+                  type="text"
+                  value={newSupplier.phone}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, phone: e.target.value })}
+                  className="w-full px-3 py-2 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] text-[#4B5563] mb-1">State {settings?.enableTax && <span className="text-red-500">*</span>}</label>
+                <Select
+                  value={newSupplier.state ? { value: newSupplier.state, label: newSupplier.state } : null}
+                  onChange={(val: any) => setNewSupplier({ ...newSupplier, state: val?.value || '' })}
+                  options={[
+                    { value: '', label: '-- Select State --' },
+                    ...indianStates.map(s => ({ value: s, label: s }))
+                  ]}
+                  className="text-[13px] font-medium"
+                  placeholder="-- Select State --"
+                  styles={{
+                    control: (base: any) => ({
+                      ...base,
+                      minHeight: '38px',
+                      borderColor: '#D1D5DB',
+                      borderRadius: '0.25rem',
+                    }),
+                    menuPortal: (base: any) => ({ ...base, zIndex: 9999 })
+                  }}
+                  menuPortalTarget={document.body}
+                />
+              </div>
+              <div>
+                <label className="block text-[13px] text-[#4B5563] mb-1">Address</label>
+                <textarea
+                  value={newSupplier.address}
+                  onChange={(e) => setNewSupplier({ ...newSupplier, address: e.target.value })}
+                  className="w-full px-3 py-2 border border-[#D1D5DB] rounded text-[13px] outline-none focus:border-[#3B82F6] min-h-[80px]"
+                />
+              </div>
+            </div>
+            <div className="p-4 bg-white pt-2 border-none pb-5">
+              <button
+                type="button"
+                onClick={handleQuickAddSupplier}
+                disabled={!newSupplier.name || addSupplierMutation.isPending}
+                className="w-full bg-[#059669] hover:bg-[#047857] text-white py-2.5 rounded font-bold text-[14px] flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+              >
+                <CheckCircle size={16} /> Save Supplier & Select
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Confirmation Modal */}
+      {isSaveModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col transform transition-all scale-100">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E3A8A] text-white px-5 py-4 flex justify-between items-center">
+              <div className="flex items-center gap-2 font-bold text-[16px]">
+                <Save size={20} /> Confirm Save Transaction
+              </div>
+              <button type="button" onClick={() => setIsSaveModalOpen(false)} className="text-white/80 hover:text-white transition-colors bg-white/10 hover:bg-white/20 p-1.5 rounded-full">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 text-center">
+              <div className="bg-blue-50 text-blue-800 p-4 rounded-lg mb-6 shadow-sm border border-blue-100">
+                <p className="font-bold text-[15px]">Net Amount: {formatCurrency(pendingSavePayload?.grandTotal || 0)}</p>
+                <p className="text-[13px] mt-1 text-blue-600">Supplier Invoice No: {pendingSavePayload?.supplierInvoiceNo}</p>
+              </div>
+              <p className="text-[#334155] font-medium mb-2">How would you like to proceed?</p>
+            </div>
+
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleConfirmSave(false)}
+                className="w-full bg-[#10B981] hover:bg-[#059669] text-white py-2.5 rounded-lg font-bold text-[14px] transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <Save size={16} /> Confirm Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <LeaveConfirmModal
+        isOpen={isLeaveModalOpen}
+        onClose={() => setIsLeaveModalOpen(false)}
+        onConfirm={() => navigate('/purchase')}
+      />
+
+    </div>
+  );
+};
+
+export default PurchaseEntry;

@@ -1,0 +1,275 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #3B82F6; /* Classic Bootstrap Blue */
+  --color-primary-focus: #2563EB; 
+  --color-sidebar: #2A3F54; /* Dark Charcoal */
+  --color-sidebar-hover: #172D44;
+  --color-secondary: #000000; /* Sidebar text */
+  --color-background: #F7F7F7; /* Light grey canvas */
+  --color-surface: #ffffff; /* White */
+  --color-surface-hover: #f9f9f9; 
+  --color-border: #E6E9ED; /* Subtle borders */
+  --color-text: #000000; /* Dark Black text */
+  --color-text-dark: #000000; /* Headings */
+  
+  --font-sans: "Inter", Roboto, Arial, sans-serif;
+}
+
+@layer base {
+  *, ::before, ::after {
+    border-color: #E5E7EB;
+    outline-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  label {
+    color: #000000;
+  }
+
+  input, textarea, select {
+    color: #000000;
+    font-weight: bold;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: #9CA3AF; /* lighter gray for placeholder */
+    font-weight: 400;
+  }
+
+  /* Hide number input spin buttons */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+/* Nasa Fresh Mart Theme Pattern: Convert grey/slate text classes to crisp black font */
+.text-gray-500,
+.text-gray-600,
+.text-gray-700,
+.text-gray-800,
+.text-gray-900,
+.text-slate-500,
+.text-slate-600,
+.text-slate-700,
+.text-slate-800,
+.text-slate-900,
+.text-\[\#111827\],
+.text-\[\#1F2937\],
+.text-\[\#334155\],
+.text-\[\#374151\],
+.text-\[\#475569\],
+.text-\[\#4B5563\],
+.text-\[\#64748B\],
+.text-\[\#6B7280\],
+.text-\[\#73879C\] {
+  color: #000000 !important;
+}
+
+label,
+.form-label {
+  color: #000000 !important;
+  font-weight: 700;
+}
+
+table tbody td {
+  color: #000000;
+}
+
+table tfoot td,
+table tfoot th,
+.table-footer-white,
+.table-footer-white td,
+.table-footer-white th,
+.table-footer-white span {
+  color: #ffffff !important;
+}
+
+
+/* React-Select black font styling matching Nasa Fresh Mart */
+[class*="-singleValue"],
+[class*="-Input"] input,
+.select__single-value {
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
+
+.html-content ol, .rsw-editor ol { list-style-type: decimal; padding-left: 1.5rem; }
+.html-content ul, .rsw-editor ul { list-style-type: disc; padding-left: 1.5rem; }
+.html-content p, .rsw-editor p { margin-bottom: 0.5rem; }
+.html-content strong, .rsw-editor strong { font-weight: bold; }
+.html-content em, .rsw-editor em { font-style: italic; }
+
+.html-content, .html-content * { color: #000000 !important; font-weight: 700 !important; }
+.print\:text-black { color: #000000 !important; }
+
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  @page { margin: 0; size: A4 portrait; }
+  .print\:hidden { display: none !important; }
+}
+
+@media (max-width: 768px) {
+  /* ── Entry form tables: stacked card layout ── */
+  .responsive-table {
+    display: block;
+    width: 100%;
+    overflow-x: hidden !important;
+    min-width: unset !important;
+  }
+  .responsive-table thead {
+    display: none;
+  }
+  .responsive-table tbody {
+    display: block;
+    width: 100%;
+    padding: 0.5rem;
+    gap: 0.75rem;
+  }
+  .responsive-table tr {
+    display: block;
+    width: 100%;
+    margin-bottom: 12px;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 12px;
+    background-color: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+    overflow: hidden;
+  }
+  .responsive-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0.875rem;
+    border-bottom: 1px solid #F1F5F9;
+    text-align: right;
+    min-height: 44px; /* touch target */
+  }
+  .responsive-table td:last-child {
+    border-bottom: none;
+    background-color: #F8FAFC;
+    border-radius: 0 0 12px 12px;
+  }
+  /* Label before each value */
+  .responsive-table td::before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: #64748B;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 0.75rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  /* Inputs / selects / divs inside td */
+  .responsive-table td > input,
+  .responsive-table td > select,
+  .responsive-table td > div {
+    flex-grow: 1;
+    max-width: 65%;
+  }
+  /* Make all entry inputs taller for touch */
+  .responsive-table td input[type="number"],
+  .responsive-table td input[type="text"] {
+    min-height: 36px;
+    font-size: 14px !important;
+    padding: 0.4rem 0.6rem !important;
+    border-radius: 6px;
+  }
+  /* Row number cell — make it a header strip */
+  .responsive-table td:first-child {
+    background: linear-gradient(to right, #0F172A, #1E3A8A);
+    color: white;
+    font-weight: 800;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    min-height: 36px;
+    border-radius: 10px 10px 0 0;
+    border-bottom: none;
+  }
+  .responsive-table td:first-child::before {
+    color: rgba(255,255,255,0.7);
+  }
+  /* Action buttons row */
+  .responsive-table td[data-label="Action"],
+  .responsive-table td[data-label="Act"] {
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 0.875rem;
+    background-color: #F8FAFC;
+  }
+  .responsive-table td[data-label="Action"]::before,
+  .responsive-table td[data-label="Act"]::before {
+    display: none;
+  }
+  /* Total cell highlight */
+  .responsive-table td[data-label="Total"] {
+    background-color: #F0FDF4;
+    font-weight: 900;
+    font-size: 1rem;
+  }
+  /* Stock badge */
+  .responsive-table td[data-label="Stock"] span {
+    font-size: 13px;
+    padding: 0.2rem 0.6rem;
+  }
+
+  /* ── Entry form: make the overflow container not clip the cards ── */
+  .entry-table-wrapper {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0.5rem !important;
+    background: #F3F5F8 !important;
+  }
+
+  /* ── Top bar: compact on mobile ── */
+  .entry-topbar-label {
+    display: none;
+  }
+
+  /* ── Action buttons bar: scrollable row on mobile ── */
+  .entry-action-bar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    padding-bottom: 4px;
+  }
+  .entry-action-bar::-webkit-scrollbar {
+    height: 3px;
+  }
+  .entry-action-bar::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 3px;
+  }
+
+  /* ── Footer totals: stack nicely ── */
+  .entry-footer-totals {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.75rem !important;
+  }
+
+  /* ── Bottom bar net amount: large and readable ── */
+  .entry-net-amount {
+    font-size: 2rem !important;
+  }
+}

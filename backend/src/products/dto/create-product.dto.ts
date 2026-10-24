@@ -1,0 +1,93 @@
+import { IsString, IsOptional, IsNumber, IsInt, Min, IsBoolean, IsArray } from 'class-validator';
+
+export class CreateProductDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  code: string;
+
+  @IsString()
+  @IsOptional()
+  barcode?: string;
+
+  @IsInt()
+  @IsOptional()
+  categoryId?: number;
+
+  @IsInt()
+  @IsOptional()
+  brandId?: number;
+
+  @IsInt()
+  unitId: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  purchaseRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  sellingRate?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  mrp?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  taxPercent?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  minStock?: number;
+
+  @IsInt()
+  @IsOptional()
+  supplierId?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  wholesaleRate?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  reorderLevel?: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(0)
+  currentStock?: number;
+
+  @IsString()
+  @IsOptional()
+  hsnCode?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isManufacturingProduct?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  sqM?: number;
+
+  @IsInt()
+  @IsOptional()
+  noOfLabels?: number;
+
+  @IsInt()
+  @IsOptional()
+  noOfUps?: number;
+
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @IsOptional()
+  rawMaterials?: number[];
+}
