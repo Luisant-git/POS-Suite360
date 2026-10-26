@@ -1925,49 +1925,48 @@ const POS = () => {
         </div>
         </div>
 
-        {/* Fixed Bottom Action Bar: Total + Cart + Save */}
-        <div className="shrink-0 bg-white border-t border-slate-200 px-3 py-2.5 shadow-[0_-4px_16px_rgba(15,23,42,0.12)] flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => validMobileCartItems.length > 0 && setIsMobileCheckoutOpen(true)}
-            className="flex-1 min-w-0 flex items-center gap-2.5 text-left"
-          >
-            <div className="relative bg-blue-50 text-[#1E3A8A] p-2 rounded-xl shrink-0">
-              <ShoppingCart size={18} />
-              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">
-                {mobileCartTotalQty}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-base font-black leading-tight text-slate-800 truncate">
-                {formatCurrency(watch('netAmount') || 0)}
-              </p>
-              <p className="text-[11px] text-slate-500 font-semibold truncate">
-                {validMobileCartItems.length} item{validMobileCartItems.length !== 1 ? 's' : ''}
-                {validMobileCartItems.length > 0 ? ' · tap for cart' : ''}
-              </p>
-            </div>
-          </button>
-          {validMobileCartItems.length > 0 && (
+        {/* Fixed Bottom Action Bar: Total + Cart + Save (Floating like Purchase Entry, visible without scrolling) */}
+        {validMobileCartItems.length > 0 && (
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-3 py-2.5 shadow-[0_-4px_20px_rgba(15,23,42,0.18)] flex items-center gap-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom duration-200">
             <button
               type="button"
               onClick={() => setIsMobileCheckoutOpen(true)}
-              className="h-10 px-3 rounded-xl bg-[#1E3A8A] text-white text-xs font-bold flex items-center gap-0.5 shrink-0 active:scale-[0.98] transition-transform"
+              className="flex-1 min-w-0 flex items-center gap-2.5 text-left active:opacity-80 transition-opacity"
+            >
+              <div className="relative bg-blue-50 text-[#1E3A8A] p-2 rounded-xl shrink-0">
+                <ShoppingCart size={18} />
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">
+                  {mobileCartTotalQty}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-base font-black leading-tight text-slate-800 truncate">
+                  {formatCurrency(watch('netAmount') || 0)}
+                </p>
+                <p className="text-[11px] text-slate-500 font-semibold truncate">
+                  {validMobileCartItems.length} item{validMobileCartItems.length !== 1 ? 's' : ''} · tap for cart
+                </p>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsMobileCheckoutOpen(true)}
+              className="h-10 px-3 rounded-xl bg-[#1E3A8A] hover:bg-[#1E40AF] text-white text-xs font-bold flex items-center gap-0.5 shrink-0 active:scale-[0.98] transition-all shadow-sm"
             >
               <span>Cart</span>
               <ChevronRight size={16} />
             </button>
-          )}
-          <button
-            type="button"
-            disabled={createMutation.isPending}
-            onClick={handleMobileSave}
-            className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white text-sm font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-600/25 shrink-0 transition-all"
-          >
-            <CheckCircle size={17} />
-            <span>{createMutation.isPending ? 'SAVING...' : editId ? 'UPDATE' : 'SAVE'}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              disabled={createMutation.isPending}
+              onClick={handleMobileSave}
+              className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 text-white text-sm font-extrabold flex items-center gap-1.5 shadow-md shadow-emerald-600/25 shrink-0 transition-all"
+            >
+              <CheckCircle size={17} />
+              <span>{createMutation.isPending ? 'SAVING...' : editId ? 'UPDATE' : 'SAVE'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Mobile Checkout Drawer / Modal */}
         {isMobileCheckoutOpen && (
