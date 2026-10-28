@@ -1905,9 +1905,30 @@ const POS = () => {
                       {formatCurrency(rate)}
                     </span>
                     {inCart ? (
-                      <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-[#1E3A8A] px-2.5 py-1 rounded-lg font-black text-xs">
-                        <ShoppingCart size={13} />
-                        <span>{inCart.quantity}</span>
+                      <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-[#1E3A8A] px-1.5 py-1 rounded-lg font-black text-xs">
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${item.name} quantity`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleMobileRemoveOne(inCart.originalIndex);
+                          }}
+                          className="p-0.5 text-red-500 active:text-red-700"
+                        >
+                          <MinusCircle size={16} />
+                        </button>
+                        <span className="min-w-4 text-center">{inCart.quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Increase ${item.name} quantity`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleMobileAddToCart(item);
+                          }}
+                          className="p-0.5 text-emerald-600 active:text-emerald-700"
+                        >
+                          <PlusCircle size={16} />
+                        </button>
                       </div>
                     ) : (
                       <div className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold text-white shadow-sm ${

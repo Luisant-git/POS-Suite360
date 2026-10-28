@@ -345,12 +345,13 @@ export default function SalesEntryScreen() {
           const inCart = cart.find(c => c.productId === item.id);
           const outOfStock = Number(item.currentStock) <= 0;
           return (
-            <TouchableOpacity
-              style={[styles.productCard, outOfStock && styles.productCardOOS]}
-              onPress={() => !outOfStock && addToCart(item)}
-              activeOpacity={0.75}
-            >
-              <View style={styles.productCardLeft}>
+            <View style={[styles.productCard, outOfStock && styles.productCardOOS]}>
+              <TouchableOpacity
+                style={styles.productCardLeft}
+                onPress={() => !outOfStock && addToCart(item)}
+                activeOpacity={0.75}
+                disabled={outOfStock}
+              >
                 <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.productCode}>{item.code}</Text>
                 <View style={styles.stockRow}>
@@ -358,22 +359,40 @@ export default function SalesEntryScreen() {
                     <Text style={styles.stockBadgeText}>Stock: {item.currentStock}</Text>
                   </View>
                 </View>
-              </View>
+              </TouchableOpacity>
               <View style={styles.productCardRight}>
                 <Text style={styles.productRate}>₹{Number(item.sellingRate).toFixed(2)}</Text>
                 {inCart ? (
-                  <View style={styles.inCartBadge}>
-                    <ShoppingCart color="#1E3A8A" size={13} />
+                  <View style={styles.productQtyControls}>
+                    <TouchableOpacity
+                      style={styles.productQtyBtn}
+                      onPress={() => removeOneFromCart(item.id)}
+                      accessibilityLabel={`Decrease ${item.name} quantity`}
+                    >
+                      <MinusCircle color="#EF4444" size={22} />
+                    </TouchableOpacity>
                     <Text style={styles.inCartText}>{inCart.quantity}</Text>
+                    <TouchableOpacity
+                      style={styles.productQtyBtn}
+                      onPress={() => addToCart(item)}
+                      accessibilityLabel={`Increase ${item.name} quantity`}
+                    >
+                      <PlusCircle color="#10B981" size={22} />
+                    </TouchableOpacity>
                   </View>
                 ) : (
-                  <View style={[styles.addBtn, outOfStock && styles.addBtnOOS]}>
+                  <TouchableOpacity
+                    style={[styles.addBtn, outOfStock && styles.addBtnOOS]}
+                    onPress={() => !outOfStock && addToCart(item)}
+                    disabled={outOfStock}
+                    activeOpacity={0.75}
+                  >
                     <Plus color="#fff" size={14} />
                     <Text style={styles.addBtnText}>{outOfStock ? 'OOS' : 'Add'}</Text>
-                  </View>
+                  </TouchableOpacity>
                 )}
               </View>
-            </TouchableOpacity>
+            </View>
           );
         }}
       />
@@ -502,7 +521,7 @@ const styles = StyleSheet.create({
   // Product card
   productCard: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
   productCardOOS: { opacity: 0.5 },
-  productCardLeft: { flex: 1, marginRight: 12 },
+  productCardLeft: { flex: 1, marginRight: 12, justifyContent: 'center' },
   productName: { fontSize: 15, fontWeight: '700', color: '#1F2937', marginBottom: 2 },
   productCode: { fontSize: 11, color: '#94A3B8', fontWeight: '600', marginBottom: 6 },
   stockRow: { flexDirection: 'row' },
@@ -517,6 +536,8 @@ const styles = StyleSheet.create({
   addBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   inCartBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFF6FF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' },
   inCartText: { fontSize: 13, fontWeight: '800', color: '#1E3A8A' },
+  productQtyControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  productQtyBtn: { padding: 2 },
 
   // Floating cart bar
   floatingBar: { position: 'absolute', bottom: 16, left: 12, right: 12, backgroundColor: '#1E3A8A', borderRadius: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, shadowColor: '#1E3A8A', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 10 },
