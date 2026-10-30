@@ -166,9 +166,14 @@ const SalesList = () => {
                   >
                     {/* Card Header: Invoice No & Date */}
                     <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-[13px] text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      <button
+                        type="button"
+                        onClick={() => setViewSaleId(sale.id)}
+                        className="font-mono font-bold text-[13px] text-[#2563EB] bg-blue-50 hover:bg-blue-100 active:scale-95 px-2 py-0.5 rounded border border-blue-200 transition-all text-left"
+                        title="Click to view invoice details"
+                      >
                         {sale.invoiceNo}
-                      </span>
+                      </button>
                       <span className="text-[11px] font-bold text-[#64748B]">
                         {sale.date ? new Date(sale.date).toISOString().split('T')[0] : '-'}
                       </span>

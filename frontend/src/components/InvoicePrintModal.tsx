@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Printer, Loader2, QrCode, Download } from 'lucide-react';
+import { Printer, Loader2, QrCode, Download, X } from 'lucide-react';
 
 const numberToWords = (num: number): string => {
   if (!num || num === 0) return 'ZERO';
@@ -210,7 +210,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
       // Table rows
       items.forEach((item: any, idx: number) => {
-        const displayName = item.isService 
+        const displayName = item.isService
           ? (item.itemName || item.serviceItem?.name || '')
           : `${item.product?.name || ''}${item.product?.code ? ` (${item.product.code})` : ''}`;
 
@@ -468,7 +468,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
       toast.error('QR code is not available for this invoice');
       return;
     }
-    
+
     setIsSharingQR(true);
     try {
       const canvas = document.createElement('canvas');
@@ -512,12 +512,12 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
       // 3. Header Text
       ctx.textAlign = 'center';
-      
+
       // Shop Name
       ctx.fillStyle = '#ffffff';
       ctx.font = `bold ${22 * scale}px sans-serif`;
       ctx.fillText((settings?.shopName || 'POS Suite 360').toUpperCase(), width / 2, 70 * scale);
-      
+
       // Subtitle
       ctx.fillStyle = '#94A3B8';
       ctx.font = `bold ${13 * scale}px sans-serif`;
@@ -531,7 +531,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
       const cardY = 140 * scale;
       const cardWidth = width - (cardMargin * 2);
       const cardHeight = 440 * scale;
-      
+
       // Shadow (Draw a slightly offset gray rect)
       roundRect(ctx, cardMargin, cardY + 8 * scale, cardWidth, cardHeight, 16 * scale, '#E2E8F0');
       // Main Card
@@ -545,7 +545,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
       // 6. Payment Details inside card
       let currentY = qrY + qrSize + 45 * scale;
-      
+
       ctx.fillStyle = '#64748B';
       ctx.font = `bold ${13 * scale}px sans-serif`;
       ctx.fillText(`INVOICE NO: #${invoiceNo}`, width / 2, currentY);
@@ -556,7 +556,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
       ctx.fillText(`${currency} ${Number(grandTotal).toFixed(2)}`, width / 2, currentY);
 
       currentY += 45 * scale;
-      
+
       const loadImage = (src: string): Promise<HTMLImageElement> => {
         return new Promise((resolve, reject) => {
           const img = new Image();
@@ -587,7 +587,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         };
 
         const centerY = currentY;
-        const iconSize = 44 * scale; 
+        const iconSize = 44 * scale;
         const overlap = 14 * scale;
         const totalW = (4 * iconSize) - (3 * overlap);
         let startX = (width - totalW) / 2;
@@ -615,7 +615,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
           // Draw the image inside (with padding)
           const padding = 8 * scale;
           drawImageAspect(img, startX + padding, centerY - (iconSize / 2) + padding, iconSize - (padding * 2), iconSize - (padding * 2));
-          
+
           ctx.restore();
 
           startX += iconSize - overlap;
@@ -743,19 +743,19 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
   const InvoiceContent = () => (
     <div 
-      className={`flex flex-col flex-1 bg-white text-slate-800 ${hiddenRenderer ? 'w-[800px] h-[1100px] box-border p-10 text-[13px]' : isA5 ? 'p-4 text-[9px] print:p-3' : 'p-8 text-[12px] print:p-6 print:text-[11px]'} overflow-hidden`}
+      className={`flex flex-col bg-white text-slate-800 ${hiddenRenderer ? 'w-[800px] h-[1100px] box-border p-10 text-[13px]' : isA5 ? 'p-2 sm:p-4 text-[9px] print:p-3' : 'p-2.5 sm:p-8 text-[11px] sm:text-[12px] print:p-6 print:text-[11px]'} print:flex-1 print:overflow-visible`}
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       {/* Header */}
-      <div className={`flex justify-between items-start ${isA5 ? 'mb-3' : 'mb-8'}`}>
-        <div className="flex flex-col gap-3">
+      <div className={`flex justify-between items-start gap-3 ${isA5 ? 'mb-2 sm:mb-3' : 'mb-3 sm:mb-8'}`}>
+        <div className="flex flex-col gap-2 sm:gap-3">
           {settings?.logoImage && (
-            <img src={settings.logoImage} alt="Logo" className={`${isA5 ? 'max-h-10 max-w-[100px]' : 'max-h-20 max-w-[200px]'} w-auto h-auto object-contain object-left`} />
+            <img src={settings.logoImage} alt="Logo" className={`${isA5 ? 'max-h-8 sm:max-h-10 max-w-[80px] sm:max-w-[100px]' : 'max-h-14 sm:max-h-20 max-w-[130px] sm:max-w-[200px]'} w-auto h-auto object-contain object-left`} />
           )}
           <div>
-            <h1 className={`${isA5 ? 'text-base' : settings?.logoImage ? 'text-xl' : 'text-2xl'} font-bold text-[#04325E] uppercase tracking-tight`}>{settings?.shopName || 'POS Suite 360'}</h1>
-            {settings?.invoiceTitle && <p className={`text-[#1A63A8] font-bold ${isA5 ? 'text-[9px]' : 'text-sm'} mt-0.5`}>{settings.invoiceTitle}</p>}
-            <div className={`${isA5 ? 'mt-1 text-[8px]' : 'mt-2 text-xs'} text-slate-800 leading-relaxed`}>
+            <h1 className={`${isA5 ? 'text-sm sm:text-base' : settings?.logoImage ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'} font-bold text-[#04325E] uppercase tracking-tight`}>{settings?.shopName || 'POS Suite 360'}</h1>
+            {settings?.invoiceTitle && <p className={`text-[#1A63A8] font-bold ${isA5 ? 'text-[8px] sm:text-[9px]' : 'text-xs sm:text-sm'} mt-0.5`}>{settings.invoiceTitle}</p>}
+            <div className={`${isA5 ? 'mt-1 text-[8px]' : 'mt-1.5 sm:mt-2 text-[10px] sm:text-xs'} text-slate-800 leading-relaxed`}>
               {settings?.shopAddress && <p>{settings.shopAddress}</p>}
               <p className="font-bold text-slate-700">{[settings?.city, settings?.state, settings?.country].filter(Boolean).join(', ')}</p>
               {settings?.phone && <p>Tel: {settings.phone}</p>}
@@ -763,33 +763,33 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
             </div>
           </div>
         </div>
-        <div className="text-right">
-          <h2 className={`${isA5 ? 'text-lg' : 'text-3xl'} font-black text-[#1A63A8] tracking-wider mb-1`}>{isEstimation ? 'BILL' : 'TAX INVOICE'}</h2>
-          <p className={`font-bold text-slate-700 ${isA5 ? 'text-[9px]' : 'text-sm'}`}>{isEstimation ? 'Est No' : 'Invoice No'}: #{invoiceNo}</p>
+        <div className="text-right shrink-0">
+          <h2 className={`${isA5 ? 'text-base sm:text-lg' : 'text-xl sm:text-3xl'} font-black text-[#1A63A8] tracking-wider mb-0.5 sm:mb-1`}>{isEstimation ? 'BILL' : 'TAX INVOICE'}</h2>
+          <p className={`font-bold text-slate-700 ${isA5 ? 'text-[8px] sm:text-[9px]' : 'text-xs sm:text-sm'}`}>{isEstimation ? 'Est No' : 'Invoice No'}: #{invoiceNo}</p>
         </div>
       </div>
 
       {/* Info Cards */}
-      <div className={`grid grid-cols-2 gap-2 ${isA5 ? 'mb-2' : 'mb-6'}`}>
-        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-4'}`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-2 sm:gap-4 ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'}`}>
+        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-4'}`}>
           <h3 className="text-[9px] font-black text-slate-700 uppercase tracking-widest mb-1">Billed To / Customer Details</h3>
-          <p className={`font-bold text-slate-800 ${isA5 ? 'text-[9px]' : 'text-sm'} mb-0.5`}>{customerName}</p>
-          <div className="text-[8px] text-slate-800 space-y-0.5">
+          <p className={`font-bold text-slate-800 ${isA5 ? 'text-[9px]' : 'text-xs sm:text-sm'} mb-0.5`}>{customerName}</p>
+          <div className="text-[9px] sm:text-[8px] text-slate-800 space-y-0.5">
             {sale?.customer?.address && <p>{sale.customer.address}</p>}
             {sale?.customer?.state && <p>{sale.customer.state}</p>}
             {sale?.customer?.phone && <p>Phone: {sale.customer.phone}</p>}
             {sale?.customer?.gstNumber && <p>GSTIN: {sale.customer.gstNumber}</p>}
           </div>
         </div>
-        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-4'}`}>
+        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-4'}`}>
           <h3 className="text-[9px] font-black text-slate-700 uppercase tracking-widest mb-1">{isEstimation ? 'Estimation Details' : 'Invoice Details'}</h3>
-          <div className={`grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 ${isA5 ? 'text-[8px]' : 'text-xs'}`}>
+          <div className={`grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 sm:gap-y-1 ${isA5 ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
             <span className="font-bold text-slate-600">Invoice No:</span>
-            <span className="text-slate-800">#{invoiceNo}</span>
+            <span className="text-slate-800 font-semibold">#{invoiceNo}</span>
             <span className="font-bold text-slate-600">Date:</span>
             <span className="text-slate-800">{date}</span>
             <span className="font-bold text-slate-600">Payment:</span>
-            <span className="text-slate-800">{sale?.paymentMode?.name || 'Cash'}</span>
+            <span className="text-slate-800 capitalize">{sale?.paymentMode?.name || 'Cash'}</span>
             {Number(sale?.customer?.openingBalance) > 0 && (
               <>
                 <span className="font-bold text-slate-600">Pending:</span>
@@ -801,34 +801,36 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
       </div>
 
       {/* Table */}
-      <div className={`border border-slate-200 ${isA5 ? 'mb-2' : 'mb-6'} flex-1 flex flex-col overflow-hidden`}>
-        <table className="w-full text-left">
-          <thead className="bg-[#2D6AA1] text-white uppercase tracking-wider" style={{ fontSize: isA5 ? '7px' : '10px' }}>
+      <div className={`border border-slate-200 rounded-lg ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'} overflow-x-auto print:flex-1 print:flex print:flex-col print:overflow-visible`}>
+        <table className="w-full text-left table-fixed sm:table-auto">
+          <thead className="bg-[#2D6AA1] text-white uppercase tracking-wider text-[8px] sm:text-[10px] print:text-[10px]">
             <tr>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[5%]`}>#</th>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[35%]`}>Item</th>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[10%] text-center`}>HSN</th>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[15%] text-center`}>Qty</th>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[15%] text-right`}>Rate</th>
-              <th className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} font-bold w-[20%] text-right`}>Amt</th>
+              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[7%] sm:w-[5%] print:w-[5%] text-center">#</th>
+              <th className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[35%] sm:w-[35%] print:w-[35%]">Item</th>
+              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[12%] sm:w-[10%] print:w-[10%] text-center">HSN</th>
+              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[14%] sm:w-[15%] print:w-[15%] text-center">Qty</th>
+              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[16%] sm:w-[15%] print:w-[15%] text-right">Rate</th>
+              <th className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[16%] sm:w-[20%] print:w-[20%] text-right">Amt</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100" style={{ fontSize: isA5 ? '8px' : '12px' }}>
+          <tbody className="divide-y divide-slate-100 text-[9px] sm:text-[11px] print:text-[11px]">
             {items.map((item: any, idx: number) => {
               const displayName = item.isService 
                 ? (item.itemName || item.serviceItem?.name || '')
                 : (item.product?.name || '');
               return (
                 <tr key={idx} className="bg-white">
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} text-slate-500`}>{idx + 1}</td>
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'}`}>
-                    <span className="font-bold text-slate-800">{displayName}</span>
-                    {!item.isService && item.product?.code && <span className="text-slate-500 ml-1">({item.product.code})</span>}
+                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-500 font-medium">{idx + 1}</td>
+                  <td className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3">
+                    <span className="font-bold text-slate-800 break-words">{displayName}</span>
+                    {!item.isService && item.product?.code && (
+                      <span className="text-slate-500 text-[8px] sm:text-[10px] print:text-[10px] ml-0.5 sm:ml-1 whitespace-nowrap">({item.product.code})</span>
+                    )}
                   </td>
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} text-center text-slate-600`}>{!item.isService ? (item.product?.hsnCode || '-') : '-'}</td>
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} text-center text-slate-600 font-medium`}>{item.quantity} {item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}</td>
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} text-right text-slate-600`}>{Number(item.rate || 0).toFixed(2)}</td>
-                  <td className={`${isA5 ? 'py-1 px-1' : 'py-3 px-4'} text-right font-bold text-slate-800`}>{Number(item.amount || item.total || 0).toFixed(2)}</td>
+                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-600 truncate">{!item.isService ? (item.product?.hsnCode || '-') : '-'}</td>
+                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-600 font-medium whitespace-nowrap">{item.quantity} {item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}</td>
+                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-right text-slate-600 whitespace-nowrap">{Number(item.rate || 0).toFixed(2)}</td>
+                  <td className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 text-right font-bold text-slate-800 whitespace-nowrap">{Number(item.amount || item.total || 0).toFixed(2)}</td>
                 </tr>
               );
             })}
@@ -837,25 +839,25 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
       </div>
 
       {/* Footer Area */}
-      <div className={`mt-auto grid gap-3 ${isA5 ? 'grid-cols-[1fr_160px]' : 'grid-cols-[1fr_350px] gap-8'}`}>
+      <div className={`mt-3 sm:mt-auto grid gap-3 ${isA5 ? 'grid-cols-[1fr_160px]' : 'grid-cols-1 sm:grid-cols-[1fr_350px] print:grid-cols-[1fr_350px] sm:gap-6'}`}>
         {/* Left Footer: Notes/Terms & QR */}
-        <div className="flex flex-col gap-2 h-full">
-          <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-4'} flex-1 flex flex-col`}>
+        <div className="flex flex-col gap-2 h-full order-2 sm:order-1 print:order-1">
+          <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-3 sm:p-4'} flex-1 flex flex-col`}>
             <h3 className="text-[9px] font-bold text-[#1A63A8] uppercase tracking-widest mb-1">Terms & Conditions</h3>
-            <div 
-              className={`${isA5 ? 'text-[8px]' : 'text-[11px]'} text-slate-800 font-bold prose prose-sm max-w-none html-content flex-1`}
+            <div
+              className={`${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'} text-slate-800 font-bold prose prose-sm max-w-none html-content flex-1`}
               dangerouslySetInnerHTML={{ __html: (settings?.invoiceNotes !== undefined && settings?.invoiceNotes !== null) ? settings.invoiceNotes : '1. Goods once sold cannot be taken back or exchanged.<br/>2. Subject to Salem jurisdiction.' }}
             />
           </div>
           {activeUpiId && grandTotal > 0 && (
-            <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-1.5' : 'p-3'} flex items-center gap-2`}>
+            <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-1.5' : 'p-2.5 sm:p-3'} flex items-center gap-2`}>
               <div className="bg-white p-1 rounded border border-slate-200 shadow-sm shrink-0">
-                <QRCodeCanvas 
+                <QRCodeCanvas
                   id="upi-qr-code-canvas"
                   value={`upi://pay?pa=${activeUpiId.trim()}&pn=${encodeURIComponent(settings?.shopName || 'Shop')}&tr=${encodeURIComponent(invoiceNo)}&am=${Number(grandTotal).toFixed(2)}&cu=INR`}
                   size={900}
                   level="M"
-                  style={{ width: isA5 ? 40 : 64, height: isA5 ? 40 : 64 }}
+                  style={{ width: isA5 ? 40 : 54, height: isA5 ? 40 : 54 }}
                 />
               </div>
               <div>
@@ -867,9 +869,9 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         </div>
 
         {/* Right Footer: Totals & Signature */}
-        <div className="flex flex-col justify-end">
-          <div className={`bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg ${isA5 ? 'pt-2 pb-1' : 'pt-4 pb-2'} flex flex-col ${isA5 ? 'mb-2' : 'mb-6'}`}>
-            <div className={`${isA5 ? 'space-y-1 text-[9px] px-2 mb-1' : 'space-y-3 text-[13px] px-4 mb-4'}`}>
+        <div className="flex flex-col justify-end order-1 sm:order-2 print:order-2">
+          <div className={`bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg ${isA5 ? 'pt-2 pb-1' : 'pt-3 pb-2 sm:pt-4'} flex flex-col ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'}`}>
+            <div className={`${isA5 ? 'space-y-1 text-[9px] px-2 mb-1' : 'space-y-2 sm:space-y-3 text-[12px] sm:text-[13px] px-3 sm:px-4 mb-2 sm:mb-4'}`}>
               <div className="flex justify-between text-[#334155]">
                 <span>Subtotal:</span>
                 <span className="font-semibold">{Number(sale?.subtotal || 0).toFixed(2)}</span>
@@ -899,28 +901,28 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
                 </div>
               )}
             </div>
-            <div className={`bg-[#F0F5FA] border-y-2 border-[#1A63A8] ${isA5 ? 'px-2 py-1' : 'px-4 py-3'} flex justify-between items-center text-[#04325E] mt-1 mb-1`}>
-              <span className={`font-bold ${isA5 ? 'text-[10px]' : 'text-[14px]'}`}>Total Due:</span>
-              <span className={`font-black tracking-tight ${isA5 ? 'text-[10px]' : 'text-[15px]'}`}>{currency} {Number(grandTotal).toFixed(2)}</span>
+            <div className={`bg-[#F0F5FA] border-y-2 border-[#1A63A8] ${isA5 ? 'px-2 py-1' : 'px-3 py-2 sm:px-4 sm:py-3'} flex justify-between items-center text-[#04325E] mt-1 mb-1`}>
+              <span className={`font-bold ${isA5 ? 'text-[10px]' : 'text-xs sm:text-[14px]'}`}>Total Due:</span>
+              <span className={`font-black tracking-tight ${isA5 ? 'text-[10px]' : 'text-sm sm:text-[15px]'}`}>{currency} {Number(grandTotal).toFixed(2)}</span>
             </div>
-            <div className={`text-right ${isA5 ? 'px-2 pb-1 text-[7px]' : 'px-4 pb-2 text-[9px]'} text-[#1A63A8] font-bold uppercase tracking-wider`}>
+            <div className={`text-right ${isA5 ? 'px-2 pb-1 text-[7px]' : 'px-3 pb-1.5 sm:px-4 sm:pb-2 text-[8px] sm:text-[9px]'} text-[#1A63A8] font-bold uppercase tracking-wider`}>
               {numberToWords(grandTotal)} ONLY
             </div>
           </div>
 
           {settings?.signatureImage && !isEstimation && (
-            <div className="text-right mt-2 relative">
-              <p className={`${isA5 ? 'text-[8px]' : 'text-[10px]'} font-bold text-slate-800 mb-8`}>For {settings?.shopName || 'POS Suite 360'}</p>
-              <img src={settings.signatureImage} alt="Authorised Signature" className="absolute bottom-5 right-6 h-8 object-contain opacity-80 mix-blend-multiply" />
-              <div className="inline-block border-t border-slate-400 pt-1 px-6 w-36 mt-2">
-                <p className="text-[9px] font-bold text-slate-700 text-center">Authorized Signatory</p>
+            <div className="text-right mt-1 sm:mt-2 relative">
+              <p className={`${isA5 ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} font-bold text-slate-800 mb-6 sm:mb-8`}>For {settings?.shopName || 'POS Suite 360'}</p>
+              <img src={settings.signatureImage} alt="Authorised Signature" className="absolute bottom-5 right-6 h-7 sm:h-8 object-contain opacity-80 mix-blend-multiply" />
+              <div className="inline-block border-t border-slate-400 pt-1 px-4 sm:px-6 w-32 sm:w-36 mt-1 sm:mt-2">
+                <p className="text-[8px] sm:text-[9px] font-bold text-slate-700 text-center">Authorized Signatory</p>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className={`${isA5 ? 'mt-2' : 'mt-8'} text-center text-[9px] font-medium text-slate-600 border-t border-slate-200 pt-2`}>
+      <div className={`${isA5 ? 'mt-2' : 'mt-4 sm:mt-8'} text-center text-[9px] font-medium text-slate-600 border-t border-slate-200 pt-2`}>
         <p>Thank you for partnering with {settings?.shopName || 'POS Suite 360'}! | Page 1 of 1</p>
       </div>
     </div>
@@ -935,38 +937,24 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
   }
 
   return createPortal(
-    <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 print:absolute print:inset-0 print:block print:bg-transparent print:m-0 print:p-0 ${autoPrint ? 'opacity-0 pointer-events-none print:opacity-100' : 'bg-black/60'}`}>
-      <div className={`bg-white w-full max-w-4xl max-h-[90vh] flex flex-col rounded-md relative print:w-full print:max-w-none print:shadow-none print:h-auto print:min-h-0 ${!autoPrint && 'shadow-2xl'}`}>
-        
+    <div className={`fixed inset-0 z-[9999] flex items-center justify-center p-1 sm:p-4 print:absolute print:inset-0 print:block print:bg-transparent print:m-0 print:p-0 ${autoPrint ? 'opacity-0 pointer-events-none print:opacity-100' : 'bg-black/60'}`}>
+      <div className={`bg-white w-full max-w-4xl h-[98vh] sm:h-auto sm:max-h-[90vh] flex flex-col rounded-lg sm:rounded-xl relative print:w-full print:max-w-none print:shadow-none print:h-auto print:min-h-0 ${!autoPrint && 'shadow-2xl'}`}>
+
         {/* Header - Screen Only */}
         {!autoPrint && (
-          <div className="flex justify-between items-center bg-[#111827] text-white p-3 rounded-t-md print:hidden shrink-0">
-            <div className="flex items-center gap-2 font-bold text-sm">
-              <Printer size={16} />
-              <span>Print {isEstimation ? 'Estimation' : 'Invoice'} - {invoiceNo}</span>
+          <div className="flex justify-between items-center bg-[#111827] text-white px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-t-lg sm:rounded-t-xl print:hidden shrink-0">
+            <div className="flex items-center gap-2 font-bold text-xs sm:text-sm truncate">
+              <Printer size={16} className="text-blue-400 shrink-0" />
+              <span className="truncate">Print {isEstimation ? 'Estimation' : 'Invoice'} - {invoiceNo}</span>
             </div>
-            {/* <div className="flex items-center gap-1 ml-4">
-              {(['a4', 'a5', 'thermal'] as const).map(fmt => (
-                <button
-                  key={fmt}
-                  type="button"
-                  onClick={() => {
-                    setPrintFormat(fmt);
-                    localStorage.setItem('invoicePrintFormat', fmt);
-                  }}
-                  className={`px-2 py-1 rounded text-[11px] font-bold transition-colors ${
-                    printFormat === fmt
-                      ? 'bg-white text-[#04325E]'
-                      : 'bg-white/10 text-white hover:bg-white/20'
-                  }`}
-                >
-                  {fmt === 'a4' ? 'A4' : fmt === 'a5' ? 'A5' : '🧾 Thermal'}
-                </button>
-              ))}
-            </div> */}
-            {/* <button type="button" onClick={onClose} className="hover:text-red-400 transition-colors">
-              <X size={20} />
-            </button> */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
           </div>
         )}
 
@@ -981,41 +969,40 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         `}</style>
 
         {/* Printable Area */}
-        <div id="printable-invoice" className="flex-1 min-h-0 overflow-auto bg-gray-200 p-2 sm:p-8 print:p-0 print:bg-white flex justify-center print:overflow-visible">
-          <div className={`bg-white shadow-sm flex flex-col print:w-full print:max-w-none print:shadow-none ${
-            printFormat === 'thermal'
+        <div id="printable-invoice" className="flex-1 min-h-0 overflow-auto bg-gray-200 p-1 sm:p-8 print:p-0 print:bg-white flex justify-center print:overflow-visible">
+          <div className={`bg-white shadow-sm flex flex-col print:w-full print:max-w-none print:shadow-none ${printFormat === 'thermal'
               ? 'w-[80mm] min-h-0 print:min-h-0'
               : printFormat === 'a5'
-              ? 'w-full max-w-[148mm] min-h-[210mm] print:min-h-[100vh]'
-              : 'w-full max-w-[210mm] min-h-[297mm] print:min-h-[100vh]'
-          }`}>
+                ? 'w-full max-w-[148mm] min-h-0 sm:min-h-[210mm] print:min-h-[100vh]'
+                : 'w-full max-w-[210mm] min-h-0 sm:min-h-[297mm] print:min-h-[100vh]'
+            }`}>
             {printFormat === 'thermal' ? <ThermalContent /> : <InvoiceContent />}
           </div>
         </div>
 
         {/* Footer Actions - Screen Only */}
         {!autoPrint && (
-          <div className="flex flex-wrap justify-between items-center gap-2 p-3 bg-gray-50 border-t border-gray-200 rounded-b-md print:hidden shrink-0">
-            <div className="flex items-center gap-2">
-              <button 
+          <div className="flex flex-wrap justify-between items-center gap-2 p-2.5 sm:p-3 bg-gray-50 border-t border-gray-200 rounded-b-lg sm:rounded-b-xl print:hidden shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-1 sm:flex-initial">
+              <button
                 type="button"
                 onClick={handleWhatsApp}
                 disabled={isSharing}
-                className="bg-[#25D366] hover:bg-[#128C7E] disabled:opacity-70 text-white px-3 py-2 rounded flex items-center gap-2 font-bold text-[12px] transition-colors"
+                className="bg-[#25D366] hover:bg-[#128C7E] disabled:opacity-70 text-white px-2.5 sm:px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold text-[11px] sm:text-[12px] transition-colors shadow-sm flex-1 sm:flex-initial"
               >
                 {isSharing ? (
                   <><Loader2 size={14} className="animate-spin" /> Preparing...</>
                 ) : (
-                  <><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg> <span className="hidden sm:inline">Share Invoice</span></>
+                  <><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg> <span>Share Invoice</span></>
                 )}
               </button>
               {showPaymentInfo && activeUpiId && grandTotal > 0 && (
                 <>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleShareQR}
                     disabled={isSharingQR}
-                    className="bg-[#38BDF8] hover:bg-[#0EA5E9] disabled:opacity-70 text-white px-3 py-2 rounded flex items-center gap-2 font-bold text-[12px] transition-colors"
+                    className="bg-[#38BDF8] hover:bg-[#0EA5E9] disabled:opacity-70 text-white px-2.5 sm:px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold text-[11px] sm:text-[12px] transition-colors shadow-sm"
                   >
                     {isSharingQR ? (
                       <><Loader2 size={14} className="animate-spin" /> <span className="hidden sm:inline">Preparing...</span></>
@@ -1023,11 +1010,11 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
                       <><QrCode size={14} /> <span className="hidden sm:inline">Share QR</span></>
                     )}
                   </button>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleDownloadQR}
                     disabled={isDownloadingQR}
-                    className="bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-70 text-white px-3 py-2 rounded flex items-center gap-2 font-bold text-[12px] transition-colors"
+                    className="bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-70 text-white px-2.5 sm:px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold text-[11px] sm:text-[12px] transition-colors shadow-sm"
                   >
                     {isDownloadingQR ? (
                       <><Loader2 size={14} className="animate-spin" /> <span className="hidden sm:inline">Downloading...</span></>
@@ -1038,15 +1025,15 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <button 
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
                 type="button"
                 onClick={() => window.print()}
-                className="bg-[#04325E] hover:bg-[#032341] text-white px-3 py-2 rounded font-bold flex items-center gap-1.5 text-[12px]"
+                className="bg-[#04325E] hover:bg-[#032341] text-white px-3 sm:px-4 py-2 rounded-lg font-bold flex items-center gap-1.5 text-[11px] sm:text-[12px] shadow-sm"
               >
-                <Printer size={14} /> <span className="hidden sm:inline">Print / Save PDF</span><span className="sm:hidden">Print</span>
+                <Printer size={14} /> <span>Print</span><span className="hidden sm:inline"> / Save PDF</span>
               </button>
-              <button onClick={onClose} className="px-3 py-2 bg-gray-500 text-white font-bold hover:bg-gray-600 rounded text-[12px]">
+              <button onClick={onClose} className="px-3 sm:px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-bold rounded-lg text-[11px] sm:text-[12px] shadow-sm">
                 Close
               </button>
             </div>

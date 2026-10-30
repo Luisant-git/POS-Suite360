@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import api from '../../services/api';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -16,17 +17,18 @@ export default function ViewPurchaseModal({ purchaseId, onClose }: Props) {
   });
 
   if (isLoading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50">
         <div className="bg-white p-6 rounded-md shadow-lg font-bold text-[#1E3A8A]">Loading invoice details...</div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   if (!purchase) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white w-full max-w-3xl rounded-md shadow-lg overflow-hidden flex flex-col max-h-[90vh]">
         <div className="bg-[#3B82F6] text-white px-4 py-3 flex items-center justify-between">
           <h2 className="font-bold text-[15px]">Purchase Invoice Details - {purchase.invoiceNo}</h2>
@@ -152,6 +154,7 @@ export default function ViewPurchaseModal({ purchaseId, onClose }: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
