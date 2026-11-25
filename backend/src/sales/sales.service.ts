@@ -59,6 +59,8 @@ export class SalesService {
           subtotal: createSaleDto.subtotal,
           tax: createSaleDto.tax || 0,
           discount: createSaleDto.discount || 0,
+          freightCharges: createSaleDto.freightCharges || 0,
+          roundOff: createSaleDto.roundOff || 0,
           grandTotal: createSaleDto.grandTotal,
           items: {
             create: createSaleDto.items.map((item) => ({
@@ -264,6 +266,8 @@ export class SalesService {
           subtotal: updateSaleDto.subtotal,
           tax: updateSaleDto.tax || 0,
           discount: updateSaleDto.discount || 0,
+          freightCharges: updateSaleDto.freightCharges || 0,
+          roundOff: updateSaleDto.roundOff || 0,
           grandTotal: updateSaleDto.grandTotal,
           items: {
             create: updateSaleDto.items.map((item: any) => ({

@@ -322,10 +322,12 @@ model Sale {
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
-  subtotal   Decimal @default(0)
-  tax        Decimal @default(0)
-  discount   Decimal @default(0)
-  grandTotal Decimal @default(0)
+  subtotal       Decimal @default(0)
+  tax            Decimal @default(0)
+  discount       Decimal @default(0)
+  freightCharges Decimal @default(0)
+  roundOff       Decimal @default(0)
+  grandTotal     Decimal @default(0)
 
   paymentModeId Int
   paymentMode   PaymentMode @relation(fields: [paymentModeId], references: [id])
@@ -563,6 +565,11 @@ model Settings {
   enableUnifiedPOS        Boolean @default(false)
   enableInvoiceEdit       Boolean @default(false)
   invoiceEditDays         Int     @default(30)
+  panNo                   String?
+  bankName                String?
+  bankAccountNo           String?
+  bankBranchIfsc          String?
+  jurisdiction            String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -747,10 +754,12 @@ model ServiceSale {
   userId Int
   user   User @relation(fields: [userId], references: [id])
 
-  subtotal   Decimal @default(0)
-  tax        Decimal @default(0)
-  discount   Decimal @default(0)
-  grandTotal Decimal @default(0)
+  subtotal       Decimal @default(0)
+  tax            Decimal @default(0)
+  discount       Decimal @default(0)
+  freightCharges Decimal @default(0)
+  roundOff       Decimal @default(0)
+  grandTotal     Decimal @default(0)
   notes      String?
 
   paymentModeId Int

@@ -58,6 +58,11 @@ export class SettingsService {
         servicePrintFormat: data.servicePrintFormat || 'thermal',
         enableInvoiceEdit: data.enableInvoiceEdit === true || data.enableInvoiceEdit === 'true',
         invoiceEditDays: data.invoiceEditDays ? Number(data.invoiceEditDays) : 30,
+        panNo: data.panNo,
+        bankName: data.bankName,
+        bankAccountNo: data.bankAccountNo,
+        bankBranchIfsc: data.bankBranchIfsc,
+        jurisdiction: data.jurisdiction,
       },
       create: {
         id: 1,
@@ -90,6 +95,11 @@ export class SettingsService {
         servicePrintFormat: data.servicePrintFormat || 'thermal',
         enableInvoiceEdit: data.enableInvoiceEdit === true || data.enableInvoiceEdit === 'true',
         invoiceEditDays: data.invoiceEditDays ? Number(data.invoiceEditDays) : 30,
+        panNo: data.panNo,
+        bankName: data.bankName,
+        bankAccountNo: data.bankAccountNo,
+        bankBranchIfsc: data.bankBranchIfsc,
+        jurisdiction: data.jurisdiction,
       },
     });
   }

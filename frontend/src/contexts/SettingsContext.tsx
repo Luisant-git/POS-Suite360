@@ -35,6 +35,11 @@ interface Settings {
   enableUnifiedPOS?: boolean;
   enableInvoiceEdit?: boolean;
   invoiceEditDays?: number;
+  panNo?: string;
+  bankName?: string;
+  bankAccountNo?: string;
+  bankBranchIfsc?: string;
+  jurisdiction?: string;
 }
 
 interface SettingsContextType {

@@ -101,6 +101,7 @@ const saleSchema = z.object({
   grossAmount: z.coerce.number(),
   totalDiscount: z.coerce.number(),
   totalDiscountPercent: z.coerce.number().optional(),
+  freightCharges: z.coerce.number().optional(),
   roundOff: z.coerce.number(),
   tax: z.coerce.number().optional(),
   netAmount: z.coerce.number(),
@@ -128,6 +129,7 @@ const freshFormValues = (invoiceNo: string = 'Generating...') => ({
   grossAmount: 0,
   totalDiscountPercent: '' as any,
   totalDiscount: '' as any,
+  freightCharges: '' as any,
   roundOff: '' as any,
   netAmount: 0
 });
@@ -255,6 +257,7 @@ const POS = () => {
       grossAmount: 0,
       totalDiscountPercent: '' as any,
       totalDiscount: '' as any,
+      freightCharges: '' as any,
       roundOff: '' as any,
       netAmount: 0
     }
@@ -344,6 +347,8 @@ const POS = () => {
       setValue('grossAmount', Number(editSaleData.subtotal));
       setValue('tax', Number(editSaleData.tax || 0));
       setValue('totalDiscount', Number(editSaleData.discount || 0));
+      setValue('freightCharges', Number(editSaleData.freightCharges || 0) || ('' as any));
+      setValue('roundOff', Number(editSaleData.roundOff || 0) || ('' as any));
       setValue('netAmount', Number(editSaleData.grandTotal));
 
       const posItems = (editSaleData.items || []).map((item: any) => {
@@ -387,6 +392,7 @@ const POS = () => {
   }, []);
   const items = watch('items');
   const watchTotalDiscount = watch('totalDiscount');
+  const watchFreightCharges = watch('freightCharges');
   const watchRoundOff = watch('roundOff');
   const selectedCustomerId = watch('customerId');
 
@@ -447,14 +453,15 @@ const POS = () => {
     });
 
     const d = Number(watchTotalDiscount) || 0;
+    const f = Number(watchFreightCharges) || 0;
     const r = Number(watchRoundOff) || 0;
-    const netAmount = grossAmount + totalTax - d + r;
+    const netAmount = grossAmount + totalTax - d + f + r;
 
     setValue('grossAmount', Number(grossAmount.toFixed(2)));
     setValue('tax', Number(totalTax.toFixed(2)));
     setValue('netAmount', Number(netAmount.toFixed(2)));
 
-  }, [JSON.stringify(items), watchTotalDiscount, watchRoundOff, setValue, settings?.enableTax, products]);
+  }, [JSON.stringify(items), watchTotalDiscount, watchFreightCharges, watchRoundOff, setValue, settings?.enableTax, products]);
 
   // Product change handler
   const handleProductChange = async (index: number, id: string) => {
@@ -631,8 +638,10 @@ const POS = () => {
       customerId: Number(data.customerId),
       paymentModeId: Number(data.paymentModeId),
       subtotal: Number(data.grossAmount),
-      discount: Number(data.totalDiscount),
+      discount: Number(data.totalDiscount) || 0,
       tax: Number(data.tax || 0),
+      freightCharges: Number(data.freightCharges || 0),
+      roundOff: Number(data.roundOff || 0),
       grandTotal: Number(data.netAmount),
       items: validItems.map(item => ({
         productId: !item.isService && item.productId > 0 ? Number(item.productId) : undefined,
@@ -1632,13 +1641,35 @@ const POS = () => {
                   />
                 </div>
 
-                <div className="w-full md:w-56 flex flex-col gap-1">
+                <div className="w-full md:w-44 flex flex-col gap-1">
                   <label className="text-[13px] font-extrabold text-[#1F2937] uppercase">Total Tax:</label>
                   <input
                     {...register('tax')}
                     type="number"
                     readOnly
                     className="w-full px-3 py-2 border-2 border-[#D1D5DB] bg-[#F3F4F6] rounded text-[18px] outline-none text-right font-bold text-gray-800"
+                  />
+                </div>
+
+                <div className="w-full md:w-36 flex flex-col gap-1">
+                  <label className="text-[13px] font-extrabold text-[#1F2937] uppercase">Freight (+):</label>
+                  <input
+                    {...register('freightCharges')}
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border-2 border-[#D1D5DB] rounded text-[16px] outline-none focus:border-[#3B82F6] text-right font-bold text-gray-800"
+                  />
+                </div>
+
+                <div className="w-full md:w-32 flex flex-col gap-1">
+                  <label className="text-[13px] font-extrabold text-[#1F2937] uppercase">Round Off:</label>
+                  <input
+                    {...register('roundOff')}
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border-2 border-[#D1D5DB] rounded text-[16px] outline-none focus:border-[#3B82F6] text-right font-bold text-gray-800"
                   />
                 </div>
 

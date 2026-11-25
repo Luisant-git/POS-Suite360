@@ -41,6 +41,11 @@ const storeSettingsSchema = z.object({
   invoiceEditDays: z.coerce.number().min(1, 'Days must be at least 1').optional().default(30),
   serviceInvoicePrefix: z.string().optional(),
   servicePrintFormat: z.string().optional(),
+  panNo: z.string().optional(),
+  bankName: z.string().optional(),
+  bankAccountNo: z.string().optional(),
+  bankBranchIfsc: z.string().optional(),
+  jurisdiction: z.string().optional(),
 });
 
 type StoreSettingsValues = z.infer<typeof storeSettingsSchema>;
@@ -75,16 +80,18 @@ const Settings = () => {
     id: 0,
     invoiceNo: 'SAMPLE-001',
     date: new Date().toISOString(),
-    grandTotal: 600,
+    grandTotal: 717,
     subtotal: 650,
     discount: 50,
-    tax: 0,
+    tax: 108,
+    freightCharges: 0,
+    roundOff: 9,
     paymentMode: { name: 'Cash' },
-    customer: { name: 'John Doe', phone: '9876543210', address: '123 Sample Street', state: '33 - Tamil Nadu' },
+    customer: { name: 'John Doe', phone: '9876543210', address: '123 Sample Street', state: '33 - Tamil Nadu', gstNumber: '33ABCDE1234F1Z5' },
     items: [
-      { product: { name: 'Product A', code: 'PRD001', unit: { shortCode: 'Nos' } }, quantity: 2, rate: 150, amount: 300 },
-      { product: { name: 'Product B', code: 'PRD002', unit: { shortCode: 'Pcs' } }, quantity: 1, rate: 200, amount: 200 },
-      { product: { name: 'Product C', code: 'PRD003', unit: { shortCode: 'Kg' } }, quantity: 3, rate: 50, amount: 150 },
+      { product: { name: 'Product A', code: 'PRD001', hsnCode: '3808', taxPercent: 18, mrp: 180, unit: { shortCode: 'Nos' } }, quantity: 2, rate: 150, tax: 54, amount: 300 },
+      { product: { name: 'Product B', code: 'PRD002', hsnCode: '3808', taxPercent: 18, mrp: 240, unit: { shortCode: 'Pcs' } }, quantity: 1, rate: 200, tax: 36, amount: 200 },
+      { product: { name: 'Product C', code: 'PRD003', hsnCode: '3402', taxPercent: 12, mrp: 65, unit: { shortCode: 'Kg' } }, quantity: 3, rate: 50, tax: 18, amount: 150 },
     ]
   };
 
@@ -133,6 +140,11 @@ const Settings = () => {
         invoiceEditDays: settings.invoiceEditDays || 30,
         serviceInvoicePrefix: settings.serviceInvoicePrefix || 'SRV-',
         servicePrintFormat: settings.servicePrintFormat || 'thermal',
+        panNo: settings.panNo || '',
+        bankName: settings.bankName || '',
+        bankAccountNo: settings.bankAccountNo || '',
+        bankBranchIfsc: settings.bankBranchIfsc || '',
+        jurisdiction: settings.jurisdiction || '',
       });
     }
   }, [settings, resetStoreForm]);
@@ -362,6 +374,14 @@ const Settings = () => {
                     placeholder="E.g., 33ABCDE1234F1Z5"
                   />
                 </div>
+                <div>
+                  <label className="block text-[12px] font-bold text-[#334155] mb-1">PAN No <span className="text-gray-400 font-normal">(Auto-derived from GSTIN if blank)</span></label>
+                  <input
+                    {...registerStore('panNo')}
+                    className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6] uppercase"
+                    placeholder="E.g., AAUCM0008R"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -588,6 +608,45 @@ const Settings = () => {
                   placeholder="e.g. TAX INVOICE"
                   className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6]"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[12px] font-bold text-[#334155] mb-1">Jurisdiction Notice <span className="text-gray-400 font-normal">(Footer)</span></label>
+                <input
+                  {...registerStore('jurisdiction')}
+                  placeholder="e.g. SUBJECT TO KRISHNAGIRI DT JURISDICTION"
+                  className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                />
+              </div>
+
+              <div className="border-t border-[#E2E8F0] pt-3 mt-1">
+                <p className="text-[12px] font-bold text-[#1E293B] mb-2">Company's Bank Details (Printed on Tax Invoice)</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#334155] mb-1">Bank Name</label>
+                    <input
+                      {...registerStore('bankName')}
+                      placeholder="e.g. ICICI BANK"
+                      className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#334155] mb-1">Account No</label>
+                    <input
+                      {...registerStore('bankAccountNo')}
+                      placeholder="e.g. 407305005363"
+                      className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#334155] mb-1">Branch & IFSC Code</label>
+                    <input
+                      {...registerStore('bankBranchIfsc')}
+                      placeholder="e.g. ICIC0004073"
+                      className="w-full px-2 py-1.5 border border-[#CBD5E1] rounded text-[13px] outline-none focus:border-[#3B82F6]"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>

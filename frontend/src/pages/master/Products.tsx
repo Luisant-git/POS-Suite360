@@ -23,6 +23,7 @@ const productSchema = z.object({
   purchaseRate: z.coerce.number().min(0).default(0),
   wholesaleRate: z.coerce.number().min(0).default(0),
   sellingRate: z.coerce.number().min(0).default(0), // Sale Rate (Retail)
+  mrp: z.coerce.number().min(0).default(0),
   taxPercent: z.coerce.number().min(0).default(0),  // GST %
   hsnCode: z.string().optional(),
   minStock: z.coerce.number().min(0).default(0),    // Min Qty (Alert)
@@ -139,6 +140,7 @@ const Products = () => {
       purchaseRate: '' as any,
       wholesaleRate: '' as any,
       sellingRate: '' as any,
+      mrp: '' as any,
       taxPercent: '' as any,
       hsnCode: '',
       minStock: '' as any,
@@ -266,6 +268,7 @@ const Products = () => {
       purchaseRate: '' as any,
       wholesaleRate: '' as any,
       sellingRate: '' as any,
+      mrp: '' as any,
       taxPercent: '' as any,
       hsnCode: '',
       minStock: '' as any,
@@ -290,6 +293,7 @@ const Products = () => {
     setValue('purchaseRate', Number(product.purchaseRate));
     setValue('wholesaleRate', Number(product.wholesaleRate));
     setValue('sellingRate', Number(product.sellingRate));
+    setValue('mrp', Number(product.mrp || 0));
     setValue('taxPercent', Number(product.taxPercent || 0));
     setValue('hsnCode', product.hsnCode || '');
     setValue('minStock', Number(product.minStock));
@@ -490,6 +494,16 @@ const Products = () => {
                 <input
                   {...register('sellingRate')}
                   type="number"
+                  placeholder="0"
+                  className="w-full px-3 py-1.5 border border-[#ccc] rounded shadow-inner focus:border-[#3B82F6] outline-none text-[13px] text-right"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-bold text-[#7C3AED] mb-1">MRP</label>
+                <input
+                  {...register('mrp')}
+                  type="number"
+                  step="0.01"
                   placeholder="0"
                   className="w-full px-3 py-1.5 border border-[#ccc] rounded shadow-inner focus:border-[#3B82F6] outline-none text-[13px] text-right"
                 />
@@ -817,6 +831,7 @@ const Products = () => {
                 ['Purchase Rate', viewProduct.purchaseRate],
                 ['Wholesale Rate', viewProduct.wholesaleRate],
                 ['Sale Rate', viewProduct.sellingRate],
+                ['MRP', viewProduct.mrp || 0],
                 ['Min Stock', viewProduct.minStock],
                 ['Reorder Level', viewProduct.reorderLevel],
                 ...(viewProduct.taxPercent ? [['GST %', `${viewProduct.taxPercent}%`]] : []),

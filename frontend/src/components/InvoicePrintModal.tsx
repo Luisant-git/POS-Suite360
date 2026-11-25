@@ -2,22 +2,99 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, Loader2, QrCode, Download, X } from 'lucide-react';
 
-const numberToWords = (num: number): string => {
-  if (!num || num === 0) return 'ZERO';
+const numberToWords = (num: number, isIndian: boolean = true): string => {
+  const value = Math.abs(Number(num) || 0);
+  if (value === 0) return isIndian ? 'RUPEES ZERO ONLY' : 'ZERO ONLY';
+
   const a = ['', 'ONE ', 'TWO ', 'THREE ', 'FOUR ', 'FIVE ', 'SIX ', 'SEVEN ', 'EIGHT ', 'NINE ', 'TEN ', 'ELEVEN ', 'TWELVE ', 'THIRTEEN ', 'FOURTEEN ', 'FIFTEEN ', 'SIXTEEN ', 'SEVENTEEN ', 'EIGHTEEN ', 'NINETEEN '];
   const b = ['', '', 'TWENTY ', 'THIRTY ', 'FORTY ', 'FIFTY ', 'SIXTY ', 'SEVENTY ', 'EIGHTY ', 'NINETY '];
-  const convert = (n: number): string => {
+
+  const convertTwoDigits = (n: number): string => {
     if (n < 20) return a[n];
-    if (n < 100) return b[Math.floor(n / 10)] + (n % 10 ? a[n % 10] : '');
-    if (n < 1000) return a[Math.floor(n / 100)] + 'HUNDRED ' + (n % 100 ? convert(n % 100) : '');
-    if (n < 1000000) return convert(Math.floor(n / 1000)) + 'THOUSAND ' + (n % 1000 ? convert(n % 1000) : '');
-    return n.toString();
+    return b[Math.floor(n / 10)] + (n % 10 ? a[n % 10] : '');
   };
-  const whole = Math.floor(Number(num));
-  const cents = Math.round((Number(num) - whole) * 100);
-  let res = convert(whole) || '';
-  if (cents > 0) res += `AND CENTS ${convert(cents)}`;
-  return res.trim();
+
+  const convertThreeDigits = (n: number): string => {
+    if (n < 100) return convertTwoDigits(n);
+    return a[Math.floor(n / 100)] + 'HUNDRED ' + (n % 100 ? convertTwoDigits(n % 100) : '');
+  };
+
+  const convertIndian = (n: number): string => {
+    if (n === 0) return '';
+    let out = '';
+    const crore = Math.floor(n / 10000000);
+    n %= 10000000;
+    const lakh = Math.floor(n / 100000);
+    n %= 100000;
+    const thousand = Math.floor(n / 1000);
+    n %= 1000;
+    if (crore > 0) out += convertIndian(crore) + 'CRORE ';
+    if (lakh > 0) out += convertTwoDigits(lakh) + 'LAKH ';
+    if (thousand > 0) out += convertTwoDigits(thousand) + 'THOUSAND ';
+    if (n > 0) out += convertThreeDigits(n);
+    return out.trim();
+  };
+
+  const convertWestern = (n: number): string => {
+    if (n === 0) return '';
+    let out = '';
+    const million = Math.floor(n / 1000000);
+    n %= 1000000;
+    const thousand = Math.floor(n / 1000);
+    n %= 1000;
+    if (million > 0) out += convertThreeDigits(million) + 'MILLION ';
+    if (thousand > 0) out += convertThreeDigits(thousand) + 'THOUSAND ';
+    if (n > 0) out += convertThreeDigits(n);
+    return out.trim();
+  };
+
+  let whole = Math.floor(value);
+  let fractional = Math.round((value - whole) * 100);
+  if (fractional >= 100) {
+    whole += 1;
+    fractional = 0;
+  }
+
+  const wholeWords = whole > 0
+    ? (isIndian ? convertIndian(whole) : convertWestern(whole))
+    : 'ZERO';
+  const fracWords = fractional > 0
+    ? (isIndian ? convertTwoDigits(fractional).trim() : convertTwoDigits(fractional).trim())
+    : '';
+
+  if (isIndian) {
+    return fracWords
+      ? `RUPEES ${wholeWords} AND ${fracWords} PAISA ONLY`
+      : `RUPEES ${wholeWords} ONLY`;
+  }
+  return fracWords
+    ? `${wholeWords} AND CENTS ${fracWords} ONLY`
+    : `${wholeWords} ONLY`;
+};
+
+const parseStateAndCode = (stateStr?: string | null, gstin?: string | null) => {
+  const raw = (stateStr || '').trim();
+  const gst = (gstin || '').trim();
+  const gstPrefix = /^\d{2}/.test(gst) ? gst.slice(0, 2) : '';
+
+  const match = raw.match(/^(\d{1,2})\s*[-–:]\s*(.+)$/);
+  if (match) {
+    return { code: match[1].padStart(2, '0'), name: match[2].trim() };
+  }
+  if (/^\d{1,2}$/.test(raw)) {
+    return { code: raw.padStart(2, '0'), name: '' };
+  }
+  return { code: gstPrefix, name: raw };
+};
+
+const formatDisplayDate = (dateInput?: string | Date | null): string => {
+  if (!dateInput) return '';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return String(dateInput);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
 };
 import { useSettings } from '../contexts/SettingsContext';
 import { useQuery } from '@tanstack/react-query';
@@ -110,11 +187,75 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
     );
   }
 
-  const date = sale?.date ? new Date(sale.date).toISOString().split('T')[0] : '';
+  const date = formatDisplayDate(sale?.date);
   const customerName = sale?.customer?.name || 'CASH A/C';
   const items = sale?.items || [];
-  const grandTotal = sale?.grandTotal || 0;
+  const grandTotal = Number(sale?.grandTotal || 0);
   const currency = settings?.currencySymbol || 'RM';
+  const isIndianCurrency =
+    currency.includes('₹') ||
+    currency.toUpperCase().includes('RS') ||
+    currency.toUpperCase().includes('INR') ||
+    (settings?.country || '').trim().toLowerCase() === 'india';
+
+  const storeStateInfo = parseStateAndCode(settings?.state, settings?.gstin);
+  const custStateInfo = parseStateAndCode(sale?.customer?.state, sale?.customer?.gstNumber);
+  const isIntraState = Boolean(
+    (storeStateInfo.code && custStateInfo.code && storeStateInfo.code === custStateInfo.code) ||
+    (storeStateInfo.name && custStateInfo.name && storeStateInfo.name.toLowerCase() === custStateInfo.name.toLowerCase())
+  );
+
+  const sellerPan =
+    (settings?.panNo || '').trim().toUpperCase() ||
+    (settings?.gstin && settings.gstin.trim().length >= 12 ? settings.gstin.trim().slice(2, 12).toUpperCase() : '');
+
+  const subtotalVal = Number(sale?.subtotal || 0);
+  const discountVal = Number(sale?.discount || 0);
+  const taxableTotalVal = Math.max(0, subtotalVal - discountVal);
+  const totalTaxVal = Number(sale?.tax || 0);
+  const freightVal = Number(sale?.freightCharges || 0);
+  const explicitRoundOff = sale?.roundOff !== undefined && sale?.roundOff !== null ? Number(sale.roundOff) : 0;
+  const roundOffVal = Math.abs(explicitRoundOff) >= 0.005
+    ? explicitRoundOff
+    : Number((grandTotal - (subtotalVal - discountVal + totalTaxVal + freightVal)).toFixed(2));
+  const hasRoundOff = Math.abs(roundOffVal) >= 0.005;
+
+  const showTaxColumns = !isEstimation && (Boolean(settings?.enableTax) || totalTaxVal > 0 || items.some((it: any) => Number(it.tax || 0) > 0 || Number(it.product?.taxPercent || 0) > 0));
+  const showMrpColumn = !isEstimation && items.some((it: any) => !it.isService);
+
+  const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0);
+  const itemsAmountSum = items.reduce((sum: number, it: any) => sum + Number(it.amount || it.total || 0), 0);
+  const amountIsPreTax = Math.abs(subtotalVal - itemsAmountSum) < 0.05 && totalTaxVal > 0;
+
+  const cgstTotal = isIntraState ? totalTaxVal / 2 : 0;
+  const sgstTotal = isIntraState ? totalTaxVal / 2 : 0;
+  const igstTotal = isIntraState ? 0 : totalTaxVal;
+
+  // Build GST Rate-wise breakdown for the Tax Summary table
+  const taxBreakdownMap = new Map<number, { rate: number; taxable: number; cgst: number; sgst: number; igst: number }>();
+  if (showTaxColumns) {
+    items.forEach((it: any) => {
+      const itemAmt = Number(it.amount || it.total || 0);
+      const itemTax = Number(it.tax || 0);
+      const itemTaxable = amountIsPreTax ? itemAmt : Math.max(0, itemAmt - itemTax);
+      let gstRate = Number(!it.isService ? it.product?.taxPercent : it.serviceItem?.taxPercent) || 0;
+      if (gstRate === 0 && itemTax > 0 && itemTaxable > 0) {
+        gstRate = Math.round((itemTax / itemTaxable) * 10000) / 100;
+      }
+      const existing = taxBreakdownMap.get(gstRate) || { rate: gstRate, taxable: 0, cgst: 0, sgst: 0, igst: 0 };
+      existing.taxable += itemTaxable;
+      const effectiveTax = itemTax > 0 ? itemTax : (itemTaxable * gstRate) / 100;
+      if (isIntraState) {
+        existing.cgst += effectiveTax / 2;
+        existing.sgst += effectiveTax / 2;
+      } else {
+        existing.igst += effectiveTax;
+      }
+      taxBreakdownMap.set(gstRate, existing);
+    });
+  }
+  const taxBreakdownRows = Array.from(taxBreakdownMap.values()).sort((a, b) => a.rate - b.rate);
+  const hasBankDetails = Boolean(settings?.bankName || settings?.bankAccountNo || settings?.bankBranchIfsc);
 
   const handleWhatsApp = async () => {
     setIsSharing(true);
@@ -172,95 +313,240 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
       // Bill To (left column)
       const billStartY = y;
-      addText('BILLED TO / CUSTOMER DETAILS', col, y, { size: 8, bold: true, color: '#64748b' }); y += 5;
+      addText('BUYER / BILLED TO', col, y, { size: 8, bold: true, color: '#64748b' }); y += 5;
       addText(customerName, col, y, { size: 11, bold: true }); y += 5;
       if (sale?.customer?.address) {
-        const addressLines = doc.splitTextToSize(sale.customer.address, 80);
+        const addressLines = doc.splitTextToSize(sale.customer.address, 84);
         addText(addressLines, col, y, { size: 9, color: '#475569' }); y += (addressLines.length * 4) + 1;
       }
-      if (sale?.customer?.state) { addText(sale.customer.state, col, y, { size: 9, color: '#475569' }); y += 5; }
+      if (custStateInfo.name || custStateInfo.code) {
+        const stateText = [
+          custStateInfo.name,
+          custStateInfo.code ? `State Code: ${custStateInfo.code}` : ''
+        ].filter(Boolean).join('   ');
+        addText(stateText, col, y, { size: 9, color: '#475569' }); y += 5;
+      }
       if (sale?.customer?.phone) { addText(`Phone: ${sale.customer.phone}`, col, y, { size: 9, color: '#475569' }); y += 5; }
-      if (sale?.customer?.gstNumber) { addText(`GSTIN: ${sale.customer.gstNumber}`, col, y, { size: 9, color: '#475569' }); y += 5; }
+      if (sale?.customer?.gstNumber) { addText(`GSTIN: ${sale.customer.gstNumber}`, col, y, { size: 9, bold: true, color: '#334155' }); y += 5; }
+      const buyerBottomY = y;
 
       // Invoice/Estimation details — right column, aligned with Bill To
-      const midX = W / 2 + 2;
+      const midX = W / 2 + 4;
       const lx = midX, vx = W - margin;
       let iy = billStartY;
       addText(isEstimation ? 'ESTIMATION DETAILS' : 'INVOICE DETAILS', midX, iy, { size: 8, bold: true, color: '#64748b' }); iy += 5;
       doc.setFontSize(9); doc.setTextColor('#334155');
-      [['Invoice No:', '#' + invoiceNo], ['Date:', date], ['Payment:', sale?.paymentMode?.name || 'Cash']]
-        .forEach(([label, val]) => {
-          doc.setFont('helvetica', 'bold'); doc.text(label, lx, iy);
-          doc.setFont('helvetica', 'normal'); doc.text(val, vx, iy, { align: 'right' }); iy += 5;
-        });
+      const detailRows: [string, string][] = [
+        [isEstimation ? 'Est No:' : 'Invoice No:', `#${invoiceNo}`],
+        ['Invoice Date:', date],
+        ...(sellerPan ? [['PAN No:', sellerPan] as [string, string]] : []),
+        ['Payment:', sale?.paymentMode?.name || 'Cash'],
+      ];
+      if (Number(sale?.customer?.openingBalance) > 0) {
+        detailRows.push(['Pending:', `${currency.replace('\u20b9', 'Rs.')} ${Number(sale.customer.openingBalance).toFixed(2)}`]);
+      }
+      detailRows.forEach(([label, val]) => {
+        doc.setFont('helvetica', 'bold'); doc.text(label, lx, iy);
+        doc.setFont('helvetica', 'normal'); doc.text(val, vx, iy, { align: 'right' }); iy += 5;
+      });
 
-      y += 4;
-      doc.setDrawColor('#e2e8f0'); doc.line(col, y, W - margin, y); y += 6;
+      y = Math.max(buyerBottomY, iy) + 3;
+      doc.setDrawColor('#e2e8f0'); doc.line(col, y, W - margin, y); y += 5;
 
       // Table header
+      const pdfCurr = currency.replace('\u20b9', 'Rs.');
       doc.setFillColor('#2D6AA1'); doc.rect(col, y - 4, W - margin * 2, 8, 'F');
-      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor('#ffffff');
-      doc.text('#', col + 2, y + 1);
-      doc.text('ITEM DESCRIPTION', col + 10, y + 1);
-      doc.text('HSN', col + 88, y + 1, { align: 'center' });
-      doc.text('QTY', col + 105, y + 1, { align: 'center' });
-      doc.text(`RATE (${currency})`, col + 138, y + 1, { align: 'right' });
-      doc.text(`AMOUNT (${currency})`, W - margin - 2, y + 1, { align: 'right' });
-      y += 8;
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#ffffff');
+      doc.text('S.No', col + 2, y + 1);
+      doc.text('DESCRIPTION OF GOODS', col + 12, y + 1);
+      doc.text('HSN', col + 80, y + 1, { align: 'center' });
+      if (showTaxColumns) doc.text('GST %', col + 98, y + 1, { align: 'center' });
+      doc.text('QTY', col + 118, y + 1, { align: 'center' });
+      doc.text('RATE', col + 140, y + 1, { align: 'right' });
+      if (showMrpColumn) doc.text('MRP', col + 158, y + 1, { align: 'right' });
+      doc.text(`AMT (${pdfCurr})`, W - margin - 2, y + 1, { align: 'right' });
+      y += 7;
 
       // Table rows
       items.forEach((item: any, idx: number) => {
+        if (y > 255) {
+          doc.addPage();
+          y = margin + 6;
+        }
         const displayName = item.isService
           ? (item.itemName || item.serviceItem?.name || '')
           : `${item.product?.name || ''}${item.product?.code ? ` (${item.product.code})` : ''}`;
-
-        const splitName = doc.splitTextToSize(displayName, 80);
-        const rowH = Math.max(lineH + 2, splitName.length * 4 + 2);
+        const splitName = doc.splitTextToSize(displayName, 62);
+        const rowH = Math.max(lineH + 1, splitName.length * 4 + 2);
         if (idx % 2 === 0) { doc.setFillColor('#f8fafc'); doc.rect(col, y - 4, W - margin * 2, rowH, 'F'); }
-        doc.setFontSize(9); doc.setTextColor('#1e293b');
-        doc.setFont('helvetica', 'normal'); doc.text(String(idx + 1), col + 2, y);
-        doc.setFont('helvetica', 'bold'); doc.text(splitName, col + 10, y);
+
+        const itemAmt = Number(item.amount || item.total || 0);
+        const itemTax = Number(item.tax || 0);
+        const itemTaxable = amountIsPreTax ? itemAmt : Math.max(0, itemAmt - itemTax);
+        let gstRate = Number(!item.isService ? item.product?.taxPercent : item.serviceItem?.taxPercent) || 0;
+        if (gstRate === 0 && itemTax > 0 && itemTaxable > 0) gstRate = Math.round((itemTax / itemTaxable) * 100);
+        const mrpVal = Number(!item.isService ? item.product?.mrp : 0) || 0;
+
+        doc.setFontSize(8); doc.setTextColor('#1e293b');
+        doc.setFont('helvetica', 'normal'); doc.text(String(idx + 1), col + 4, y, { align: 'center' });
+        doc.setFont('helvetica', 'bold'); doc.text(splitName, col + 12, y);
         doc.setFont('helvetica', 'normal');
-        if (!item.isService && item.product?.hsnCode) { doc.setFontSize(8); doc.text(item.product.hsnCode, col + 88, y, { align: 'center' }); doc.setFontSize(9); }
-        doc.text(`${item.quantity} ${item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}`, col + 105, y, { align: 'center' });
-        doc.text(Number(item.rate || 0).toFixed(2), col + 138, y, { align: 'right' });
+        doc.text(!item.isService && item.product?.hsnCode ? String(item.product.hsnCode) : '-', col + 80, y, { align: 'center' });
+        if (showTaxColumns) doc.text(`${gstRate}%`, col + 98, y, { align: 'center' });
+        doc.text(`${Number(item.quantity || 0)} ${item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}`, col + 118, y, { align: 'center' });
+        doc.text(Number(item.rate || 0).toFixed(2), col + 140, y, { align: 'right' });
+        if (showMrpColumn) doc.text(mrpVal > 0 ? mrpVal.toFixed(2) : '-', col + 158, y, { align: 'right' });
         doc.setFont('helvetica', 'bold');
-        doc.text(Number(item.amount || item.total || 0).toFixed(2), W - margin - 2, y, { align: 'right' });
+        doc.text(itemAmt.toFixed(2), W - margin - 2, y, { align: 'right' });
         y += rowH;
       });
 
-      doc.setDrawColor('#e2e8f0'); doc.line(col, y, W - margin, y); y += 6;
+      // Table Total Row (Total Qty + Total Amount)
+      doc.setFillColor('#F0F5FA'); doc.rect(col, y - 3.5, W - margin * 2, 7, 'F');
+      doc.setDrawColor('#1A63A8'); doc.setLineWidth(0.3);
+      doc.line(col, y - 3.5, W - margin, y - 3.5);
+      doc.line(col, y + 3.5, W - margin, y + 3.5);
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#04325E');
+      doc.text('Total', col + 12, y + 1);
+      doc.text(Number(totalQty).toFixed(2), col + 118, y + 1, { align: 'center' });
+      doc.text(`${pdfCurr} ${itemsAmountSum.toFixed(2)}`, W - margin - 2, y + 1, { align: 'right' });
+      y += 9;
 
-      // Push footer to bottom if space allows
-      const bottomY = 297 - margin - 50;
-      if (y < bottomY) y = bottomY;
+      if (y > 215) {
+        doc.addPage();
+        y = margin + 4;
+      }
 
-      const totalsStartY = y;
-      const totalsX = W - margin - 60, valX = W - margin - 2;
+      // Totals Summary (right side) & Bank / Terms (left side)
+      const totalsX = W - margin - 64;
+      const valX = W - margin - 2;
+      let ty = y;
 
-      // Terms & Conditions (left)
+      doc.setFontSize(8.5); doc.setFont('helvetica', 'normal'); doc.setTextColor('#334155');
+      doc.text('Amount:', totalsX, ty); doc.text(subtotalVal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+      if (discountVal > 0) {
+        doc.text('Discount:', totalsX, ty); doc.text(`-${discountVal.toFixed(2)}`, valX, ty, { align: 'right' }); ty += 5;
+        doc.setFont('helvetica', 'bold');
+        doc.text('Taxable Total:', totalsX, ty); doc.text(taxableTotalVal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+        doc.setFont('helvetica', 'normal');
+      }
+      if (showTaxColumns && totalTaxVal > 0) {
+        doc.text('Sales CGST:', totalsX, ty); doc.text(cgstTotal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+        doc.text('Sales SGST:', totalsX, ty); doc.text(sgstTotal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+        doc.text('Sales IGST:', totalsX, ty); doc.text(igstTotal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+      }
+      if (freightVal > 0) {
+        doc.text('Freight Charges (+):', totalsX, ty); doc.text(freightVal.toFixed(2), valX, ty, { align: 'right' }); ty += 5;
+      }
+      if (hasRoundOff) {
+        doc.text('Round Off:', totalsX, ty);
+        doc.text(`${roundOffVal > 0 ? '+' : ''}${roundOffVal.toFixed(2)}`, valX, ty, { align: 'right' });
+        ty += 5;
+      }
+
+      // Total due highlight box
+      doc.setFillColor('#F0F5FA'); doc.rect(totalsX - 3, ty - 3.5, W - margin - totalsX + 3, 9.5, 'F');
+      doc.setDrawColor('#1A63A8'); doc.setLineWidth(0.45);
+      doc.line(totalsX - 3, ty - 3.5, W - margin, ty - 3.5);
+      doc.line(totalsX - 3, ty + 6, W - margin, ty + 6);
+      doc.setFontSize(10.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#04325E');
+      doc.text('Total Due:', totalsX, ty + 2.5);
+      doc.text(`${pdfCurr} ${grandTotal.toFixed(2)}`, valX, ty + 2.5, { align: 'right' });
+      ty += 11;
+
+      // Bank Details & Terms on left column beside totals
+      let ly = y;
+      if (hasBankDetails) {
+        doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1A63A8');
+        doc.text("COMPANY'S BANK DETAILS", col, ly); ly += 4.5;
+        doc.setFontSize(7.5); doc.setTextColor('#1e293b');
+        if (settings?.bankName) {
+          doc.setFont('helvetica', 'bold'); doc.text('Bank Name: ', col, ly);
+          doc.setFont('helvetica', 'normal'); doc.text(settings.bankName, col + 26, ly); ly += 4;
+        }
+        if (settings?.bankAccountNo) {
+          doc.setFont('helvetica', 'bold'); doc.text('Account No: ', col, ly);
+          doc.setFont('helvetica', 'normal'); doc.text(settings.bankAccountNo, col + 26, ly); ly += 4;
+        }
+        if (settings?.bankBranchIfsc) {
+          doc.setFont('helvetica', 'bold'); doc.text('Branch & IFSC: ', col, ly);
+          doc.setFont('helvetica', 'normal'); doc.text(settings.bankBranchIfsc, col + 26, ly); ly += 4;
+        }
+        ly += 3;
+      }
+
       const rawNotes = (settings?.invoiceNotes ?? '1. Goods once sold cannot be taken back or exchanged.<br/>2. Subject to Salem jurisdiction.');
       if (rawNotes) {
         doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1A63A8');
-        doc.text('TERMS & CONDITIONS', col, totalsStartY);
+        doc.text('TERMS & CONDITIONS', col, ly); ly += 4.5;
         const cleanNotes = rawNotes
           .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li)>/gi, '\n')
           .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
           .replace(/(\d+\.)/g, '\n$1').replace(/\n\s*\n/g, '\n').trim();
-        const splitNotes = doc.splitTextToSize(cleanNotes, totalsX - col - 4);
-        doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1e293b');
-        doc.text(splitNotes, col, totalsStartY + 5);
+        const splitNotes = doc.splitTextToSize(cleanNotes, totalsX - col - 8);
+        doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor('#334155');
+        doc.text(splitNotes, col, ly);
+        ly += splitNotes.length * 3.5 + 3;
       }
 
-      // QR code (left, below terms) — styled card embedded in PDF
-      // QR click-to-pay text disabled
-      // if (settings?.upiId && grandTotal > 0 && qrCanvas) {
-      //   const clickUrl = ...;
-      //   doc.text('SCAN OR CLICK TO PAY', col + 26, qrY + 5);
-      //   doc.text(`UPI ID: ${activeUpiId.trim()}`, col + 26, qrY + 11);
-      //   doc.text('Scan QR or tap text to pay', col + 26, qrY + 17);
-      // }
+      y = Math.max(ty, ly) + 2;
+
+      // Amount Chargeable in words + E. & O.E
+      doc.setFillColor('#F8FAFC'); doc.rect(col, y - 3.5, W - margin * 2, 10, 'F');
+      doc.setDrawColor('#E2E8F0'); doc.setLineWidth(0.3); doc.rect(col, y - 3.5, W - margin * 2, 10);
+      doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor('#64748B');
+      doc.text('Amount Chargeable (in words):', col + 2, y);
+      doc.text('E. & O.E', W - margin - 2, y, { align: 'right' });
+      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor('#04325E');
+      doc.text(numberToWords(grandTotal, isIndianCurrency), col + 2, y + 4.5, { maxWidth: W - margin * 2 - 4 });
+      y += 12;
+
+      // GST Breakdown Table
+      if (showTaxColumns && taxBreakdownRows.length > 0) {
+        if (y > 240) { doc.addPage(); y = margin + 4; }
+        doc.setFillColor('#2D6AA1'); doc.rect(col, y - 3.5, W - margin * 2, 7, 'F');
+        doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor('#ffffff');
+        doc.text('GST RATE', col + 2, y + 1);
+        doc.text('TAXABLE VALUE', col + 50, y + 1, { align: 'right' });
+        doc.text('CGST %', col + 68, y + 1, { align: 'center' });
+        doc.text('CGST AMT', col + 94, y + 1, { align: 'right' });
+        doc.text('SGST %', col + 112, y + 1, { align: 'center' });
+        doc.text('SGST AMT', col + 138, y + 1, { align: 'right' });
+        doc.text('IGST %', col + 155, y + 1, { align: 'center' });
+        doc.text('IGST AMT', W - margin - 2, y + 1, { align: 'right' });
+        y += 6.5;
+
+        taxBreakdownRows.forEach((row, rIdx) => {
+          if (rIdx % 2 === 0) { doc.setFillColor('#f8fafc'); doc.rect(col, y - 3.5, W - margin * 2, 5.5, 'F'); }
+          doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor('#1e293b');
+          doc.text(`GST ${row.rate}%`, col + 2, y);
+          doc.text(row.taxable.toFixed(2), col + 50, y, { align: 'right' });
+          doc.text(isIntraState ? `${row.rate / 2}%` : '0%', col + 68, y, { align: 'center' });
+          doc.text(row.cgst.toFixed(2), col + 94, y, { align: 'right' });
+          doc.text(isIntraState ? `${row.rate / 2}%` : '0%', col + 112, y, { align: 'center' });
+          doc.text(row.sgst.toFixed(2), col + 138, y, { align: 'right' });
+          doc.text(!isIntraState ? `${row.rate}%` : '0%', col + 155, y, { align: 'center' });
+          doc.text(row.igst.toFixed(2), W - margin - 2, y, { align: 'right' });
+          y += 5.5;
+        });
+
+        doc.setFillColor('#F0F5FA'); doc.rect(col, y - 3.5, W - margin * 2, 6, 'F');
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#04325E');
+        doc.text('Total', col + 2, y);
+        doc.text(taxBreakdownRows.reduce((s, r) => s + r.taxable, 0).toFixed(2), col + 50, y, { align: 'right' });
+        doc.text(taxBreakdownRows.reduce((s, r) => s + r.cgst, 0).toFixed(2), col + 94, y, { align: 'right' });
+        doc.text(taxBreakdownRows.reduce((s, r) => s + r.sgst, 0).toFixed(2), col + 138, y, { align: 'right' });
+        doc.text(taxBreakdownRows.reduce((s, r) => s + r.igst, 0).toFixed(2), W - margin - 2, y, { align: 'right' });
+        y += 6.5;
+
+        doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1A63A8');
+        doc.text(`Tax Amount (in words): ${numberToWords(totalTaxVal, isIndianCurrency)}`, col + 2, y, { maxWidth: W - margin * 2 - 4 });
+        y += 7;
+      }
+
+      // QR code (left) & Authorised Signatory (right)
       const qrCanvas = document.getElementById('upi-qr-code-canvas') as HTMLCanvasElement | null;
+      const bottomBlockY = Math.max(y + 2, 240);
       if (activeUpiId && grandTotal > 0 && qrCanvas) {
         await new Promise<void>((resolve) => {
           const styledCanvas = document.createElement('canvas');
@@ -270,27 +556,21 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
           const sw = 200 * sc; const sh = 200 * sc;
           styledCanvas.width = sw; styledCanvas.height = sh;
           ctx2.imageSmoothingEnabled = true; ctx2.imageSmoothingQuality = 'high';
-          // Background
           ctx2.fillStyle = '#F8FAFC'; ctx2.fillRect(0, 0, sw, sh);
-          // Header bar
           ctx2.fillStyle = '#04325E'; ctx2.fillRect(0, 0, sw, 44 * sc);
           ctx2.textAlign = 'center';
           ctx2.fillStyle = '#ffffff'; ctx2.font = `bold ${8 * sc}px sans-serif`;
           ctx2.fillText((settings?.shopName || 'POS Suite 360').toUpperCase(), sw / 2, 18 * sc);
           ctx2.fillStyle = '#94A3B8'; ctx2.font = `bold ${6 * sc}px sans-serif`;
           ctx2.fillText('SCAN TO PAY', sw / 2, 32 * sc);
-          // White card
           ctx2.fillStyle = '#ffffff';
           ctx2.fillRect(8 * sc, 48 * sc, sw - 16 * sc, 140 * sc);
-          // QR image
           const qrSz = 80 * sc;
           ctx2.drawImage(qrCanvas, (sw - qrSz) / 2, 52 * sc, qrSz, qrSz);
-          // Invoice + amount
           ctx2.fillStyle = '#64748B'; ctx2.font = `bold ${5 * sc}px sans-serif`;
           ctx2.fillText(`INVOICE: #${invoiceNo}`, sw / 2, 142 * sc);
           ctx2.fillStyle = '#0F172A'; ctx2.font = `bold ${8 * sc}px sans-serif`;
-          ctx2.fillText(`${currency} ${Number(grandTotal).toFixed(2)}`, sw / 2, 158 * sc);
-          // UPI ID
+          ctx2.fillText(`${pdfCurr} ${Number(grandTotal).toFixed(2)}`, sw / 2, 158 * sc);
           ctx2.fillStyle = '#64748B'; ctx2.font = `${4.5 * sc}px sans-serif`;
           ctx2.fillText(activeUpiId.trim(), sw / 2, 172 * sc);
           styledCanvas.toBlob((blob) => {
@@ -298,20 +578,11 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
             const reader = new FileReader();
             reader.onload = () => {
               const dataUrl = reader.result as string;
-              const qrY = totalsStartY + 18;
-              const qrW = 50; const qrH = 50;
+              const qrY = Math.min(bottomBlockY, 244);
+              const qrW = 34; const qrH = 34;
               doc.addImage(dataUrl, 'PNG', col, qrY, qrW, qrH);
-              var iconX = col + qrW / 2;
-              var iconY = qrY + qrH + 3;
-              doc.setDrawColor('#1A63A8'); doc.setLineWidth(0.6);
-              doc.line(iconX, iconY, iconX, iconY + 4);
-              doc.line(iconX - 2, iconY + 2, iconX, iconY + 4);
-              doc.line(iconX + 2, iconY + 2, iconX, iconY + 4);
-              doc.line(iconX - 3, iconY + 5, iconX + 3, iconY + 5);
-              doc.setFontSize(6); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1A63A8');
-              doc.text('DOWNLOAD QR', iconX, iconY + 9, { align: 'center' });
-              var dlUrl = window.location.origin + '/upi-redirect?pa=' + encodeURIComponent(activeUpiId.trim()) + '&pn=' + encodeURIComponent((settings && settings.shopName) || 'Shop') + '&tr=' + encodeURIComponent(invoiceNo) + '&am=' + Number(grandTotal).toFixed(2) + '&cu=INR';
-              doc.link(col, qrY, qrW, qrH + 12, { url: dlUrl });
+              const dlUrl = window.location.origin + '/upi-redirect?pa=' + encodeURIComponent(activeUpiId.trim()) + '&pn=' + encodeURIComponent((settings && settings.shopName) || 'Shop') + '&tr=' + encodeURIComponent(invoiceNo) + '&am=' + Number(grandTotal).toFixed(2) + '&cu=INR';
+              doc.link(col, qrY, qrW, qrH, { url: dlUrl });
               resolve();
             };
             reader.readAsDataURL(blob);
@@ -319,44 +590,23 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         });
       }
 
-      // Totals (right)
-      doc.setFontSize(10); doc.setFont('helvetica', 'normal'); doc.setTextColor('#334155');
-      doc.text('Subtotal:', totalsX, y);
-      doc.text(Number(sale?.subtotal || 0).toFixed(2), valX, y, { align: 'right' }); y += lineH;
-
-      if (settings?.enableTax) {
-        const taxVal = Number(sale?.tax || 0);
-        if (taxVal > 0) {
-          const ss = (settings.state || '').trim().toLowerCase();
-          const cs = (sale?.customer?.state || '').trim().toLowerCase();
-          if (ss && cs && ss === cs) {
-            const half = (taxVal / 2).toFixed(2);
-            doc.text('CGST:', totalsX, y); doc.text(half, valX, y, { align: 'right' }); y += lineH;
-            doc.text('SGST:', totalsX, y); doc.text(half, valX, y, { align: 'right' }); y += lineH;
-          } else {
-            doc.text('IGST:', totalsX, y); doc.text(taxVal.toFixed(2), valX, y, { align: 'right' }); y += lineH;
-          }
-        }
+      if (!isEstimation) {
+        const sigY = Math.min(bottomBlockY + 2, 260);
+        doc.setFontSize(8.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1e293b');
+        doc.text(`For ${(settings?.shopName || 'POS Suite 360').toUpperCase()}`, W - margin, sigY, { align: 'right' });
+        doc.setDrawColor('#94a3b8'); doc.setLineWidth(0.3);
+        doc.line(W - margin - 45, sigY + 14, W - margin, sigY + 14);
+        doc.setFontSize(8); doc.setTextColor('#475569');
+        doc.text('Authorised Signatory', W - margin - 22.5, sigY + 18, { align: 'center' });
       }
-      if (Number(sale?.discount) > 0) {
-        doc.text('Discount:', totalsX, y); doc.text(Number(sale.discount).toFixed(2), valX, y, { align: 'right' }); y += lineH;
-      }
-
-      // Total due box
-      doc.setFillColor('#F0F5FA'); doc.rect(totalsX - 4, y - 4, W - margin - totalsX + 4 + margin, 12, 'F');
-      doc.setDrawColor('#1A63A8'); doc.setLineWidth(0.5);
-      doc.line(totalsX - 4, y - 4, W, y - 4);
-      doc.line(totalsX - 4, y + 8, W, y + 8);
-      doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor('#04325E');
-      doc.text('Total Due:', totalsX, y + 3);
-      doc.text(`${currency.replace('\u20b9', 'Rs.')} ${Number(grandTotal).toFixed(2)}`, valX, y + 3, { align: 'right' });
-      y += 14;
-      doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor('#1A63A8');
-      doc.text(`${numberToWords(grandTotal)} ONLY`, valX, y, { align: 'right' });
 
       // Footer
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor('#94a3b8');
-      doc.text(`Thank you for partnering with ${settings?.shopName || 'POS Suite 360'}! | Page 1 of 1`, W / 2, 287, { align: 'center' });
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor('#64748b');
+      if (settings?.jurisdiction) {
+        doc.text(settings.jurisdiction.toUpperCase(), W / 2, 283, { align: 'center' });
+      }
+      doc.setFont('helvetica', 'normal'); doc.setTextColor('#94a3b8');
+      doc.text(`This is a computer generated invoice | Thank you for partnering with ${settings?.shopName || 'POS Suite 360'}!`, W / 2, 288, { align: 'center' });
 
       const pdfBlob = doc.output('blob');
       const file = new File([pdfBlob], `Invoice_${invoiceNo}.pdf`, { type: 'application/pdf' });
@@ -722,7 +972,7 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         <span>TOTAL:</span>
         <span>{currency} {Number(grandTotal).toFixed(2)}</span>
       </div>
-      <p className="text-[9px] mt-0.5">{numberToWords(grandTotal)} ONLY</p>
+      <p className="text-[9px] mt-0.5">{numberToWords(grandTotal, isIndianCurrency)}</p>
       {activeUpiId && grandTotal > 0 && (
         <div className="flex flex-col items-center mt-2">
           <QRCodeCanvas
@@ -743,23 +993,25 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
 
   const InvoiceContent = () => (
     <div 
-      className={`flex flex-col bg-white text-slate-800 ${hiddenRenderer ? 'w-[800px] h-[1100px] box-border p-10 text-[13px]' : isA5 ? 'p-2 sm:p-4 text-[9px] print:p-3' : 'p-2.5 sm:p-8 text-[11px] sm:text-[12px] print:p-6 print:text-[11px]'} print:flex-1 print:overflow-visible`}
+      className={`flex flex-col bg-white text-slate-800 ${hiddenRenderer ? 'w-[800px] min-h-[1100px] box-border p-10 text-[13px]' : isA5 ? 'p-2 sm:p-4 text-[9px] print:p-3' : 'p-2.5 sm:p-8 text-[11px] sm:text-[12px] print:p-6 print:text-[11px]'} print:flex-1 print:overflow-visible`}
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       {/* Header */}
-      <div className={`flex justify-between items-start gap-3 ${isA5 ? 'mb-2 sm:mb-3' : 'mb-3 sm:mb-8'}`}>
-        <div className="flex flex-col gap-2 sm:gap-3">
+      <div className={`flex justify-between items-start gap-3 ${isA5 ? 'mb-2 sm:mb-3' : 'mb-3 sm:mb-5'}`}>
+        <div className="flex items-start gap-3 sm:gap-4">
           {settings?.logoImage && (
-            <img src={settings.logoImage} alt="Logo" className={`${isA5 ? 'max-h-8 sm:max-h-10 max-w-[80px] sm:max-w-[100px]' : 'max-h-14 sm:max-h-20 max-w-[130px] sm:max-w-[200px]'} w-auto h-auto object-contain object-left`} />
+            <img src={settings.logoImage} alt="Logo" className={`${isA5 ? 'max-h-10 max-w-[70px]' : 'max-h-16 sm:max-h-20 max-w-[110px] sm:max-w-[150px]'} w-auto h-auto object-contain object-left shrink-0`} />
           )}
           <div>
-            <h1 className={`${isA5 ? 'text-sm sm:text-base' : settings?.logoImage ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'} font-bold text-[#04325E] uppercase tracking-tight`}>{settings?.shopName || 'POS Suite 360'}</h1>
+            <h1 className={`${isA5 ? 'text-sm sm:text-base' : settings?.logoImage ? 'text-base sm:text-xl' : 'text-xl sm:text-2xl'} font-bold text-[#04325E] uppercase tracking-tight leading-snug`}>{settings?.shopName || 'POS Suite 360'}</h1>
             {settings?.invoiceTitle && <p className={`text-[#1A63A8] font-bold ${isA5 ? 'text-[8px] sm:text-[9px]' : 'text-xs sm:text-sm'} mt-0.5`}>{settings.invoiceTitle}</p>}
-            <div className={`${isA5 ? 'mt-1 text-[8px]' : 'mt-1.5 sm:mt-2 text-[10px] sm:text-xs'} text-slate-800 leading-relaxed`}>
+            <div className={`${isA5 ? 'mt-1 text-[8px]' : 'mt-1 sm:mt-1.5 text-[10px] sm:text-xs'} text-slate-700 leading-relaxed`}>
               {settings?.shopAddress && <p>{settings.shopAddress}</p>}
-              <p className="font-bold text-slate-700">{[settings?.city, settings?.state, settings?.country].filter(Boolean).join(', ')}</p>
-              {settings?.phone && <p>Tel: {settings.phone}</p>}
-              {settings?.gstin && <p>GSTIN: {settings.gstin}</p>}
+              <p className="font-semibold text-slate-700">{[settings?.city, settings?.state, settings?.country].filter(Boolean).join(', ')}</p>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                {settings?.phone && <span>Tel: <strong className="text-slate-800">{settings.phone}</strong></span>}
+                {settings?.gstin && <span>GSTIN: <strong className="text-slate-800">{settings.gstin}</strong></span>}
+              </div>
             </div>
           </div>
         </div>
@@ -769,95 +1021,294 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
         </div>
       </div>
 
-      {/* Info Cards */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-2 sm:gap-4 ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'}`}>
-        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-4'}`}>
-          <h3 className="text-[9px] font-black text-slate-700 uppercase tracking-widest mb-1">Billed To / Customer Details</h3>
-          <p className={`font-bold text-slate-800 ${isA5 ? 'text-[9px]' : 'text-xs sm:text-sm'} mb-0.5`}>{customerName}</p>
-          <div className="text-[9px] sm:text-[8px] text-slate-800 space-y-0.5">
+      {/* Info Cards: Buyer & Invoice Details */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 print:grid-cols-2 gap-2 sm:gap-4 ${isA5 ? 'mb-2' : 'mb-3 sm:mb-4'}`}>
+        <div className={`bg-slate-50 border border-slate-200/80 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-3.5'}`}>
+          <h3 className="text-[9px] font-black text-[#1A63A8] uppercase tracking-widest mb-1">Buyer / Billed To</h3>
+          <p className={`font-bold text-slate-900 ${isA5 ? 'text-[9px]' : 'text-xs sm:text-sm'} mb-0.5`}>{customerName}</p>
+          <div className={`${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'} text-slate-700 space-y-0.5 leading-snug`}>
             {sale?.customer?.address && <p>{sale.customer.address}</p>}
-            {sale?.customer?.state && <p>{sale.customer.state}</p>}
-            {sale?.customer?.phone && <p>Phone: {sale.customer.phone}</p>}
-            {sale?.customer?.gstNumber && <p>GSTIN: {sale.customer.gstNumber}</p>}
+            {(custStateInfo.name || custStateInfo.code) && (
+              <p className="flex flex-wrap gap-x-3">
+                {custStateInfo.name && <span>State: <strong className="text-slate-800">{custStateInfo.name}</strong></span>}
+                {custStateInfo.code && <span>State Code: <strong className="text-slate-800">{custStateInfo.code}</strong></span>}
+              </p>
+            )}
+            {sale?.customer?.phone && <p>Phone: <strong className="text-slate-800">{sale.customer.phone}</strong></p>}
+            {sale?.customer?.gstNumber && <p>GSTIN: <strong className="text-slate-900">{sale.customer.gstNumber}</strong></p>}
           </div>
         </div>
-        <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-4'}`}>
-          <h3 className="text-[9px] font-black text-slate-700 uppercase tracking-widest mb-1">{isEstimation ? 'Estimation Details' : 'Invoice Details'}</h3>
-          <div className={`grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 sm:gap-y-1 ${isA5 ? 'text-[8px]' : 'text-[11px] sm:text-xs'}`}>
-            <span className="font-bold text-slate-600">Invoice No:</span>
-            <span className="text-slate-800 font-semibold">#{invoiceNo}</span>
-            <span className="font-bold text-slate-600">Date:</span>
-            <span className="text-slate-800">{date}</span>
-            <span className="font-bold text-slate-600">Payment:</span>
-            <span className="text-slate-800 capitalize">{sale?.paymentMode?.name || 'Cash'}</span>
+        <div className={`bg-slate-50 border border-slate-200/80 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-3.5'}`}>
+          <h3 className="text-[9px] font-black text-[#1A63A8] uppercase tracking-widest mb-1">{isEstimation ? 'Estimation Details' : 'Invoice Details'}</h3>
+          <div className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 sm:gap-y-1 ${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'}`}>
+            <span className="font-bold text-slate-600">{isEstimation ? 'Est No:' : 'Invoice No:'}</span>
+            <span className="text-slate-900 font-bold">#{invoiceNo}</span>
+            <span className="font-bold text-slate-600">Invoice Date:</span>
+            <span className="text-slate-800 font-medium">{date}</span>
+            {sellerPan && (
+              <>
+                <span className="font-bold text-slate-600">PAN No:</span>
+                <span className="text-slate-800 font-semibold uppercase">{sellerPan}</span>
+              </>
+            )}
+            <span className="font-bold text-slate-600">Payment Mode:</span>
+            <span className="text-slate-800 capitalize font-medium">{sale?.paymentMode?.name || 'Cash'}</span>
             {Number(sale?.customer?.openingBalance) > 0 && (
               <>
-                <span className="font-bold text-slate-600">Pending:</span>
-                <span className="text-slate-800">{currency} {Number(sale.customer.openingBalance).toFixed(2)}</span>
+                <span className="font-bold text-slate-600">Pending Bal:</span>
+                <span className="text-slate-800 font-semibold">{currency} {Number(sale.customer.openingBalance).toFixed(2)}</span>
               </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className={`border border-slate-200 rounded-lg ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'} overflow-x-auto print:flex-1 print:flex print:flex-col print:overflow-visible`}>
-        <table className="w-full text-left table-fixed sm:table-auto">
-          <thead className="bg-[#2D6AA1] text-white uppercase tracking-wider text-[8px] sm:text-[10px] print:text-[10px]">
+      {/* Items Table */}
+      <div className={`border border-slate-200 rounded-lg ${isA5 ? 'mb-2' : 'mb-3 sm:mb-4'} overflow-x-auto print:overflow-visible`}>
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-[#2D6AA1] text-white uppercase tracking-wider text-[7.5px] sm:text-[9.5px] print:text-[9.5px]">
             <tr>
-              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[7%] sm:w-[5%] print:w-[5%] text-center">#</th>
-              <th className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[35%] sm:w-[35%] print:w-[35%]">Item</th>
-              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[12%] sm:w-[10%] print:w-[10%] text-center">HSN</th>
-              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[14%] sm:w-[15%] print:w-[15%] text-center">Qty</th>
-              <th className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[16%] sm:w-[15%] print:w-[15%] text-right">Rate</th>
-              <th className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 font-bold w-[16%] sm:w-[20%] print:w-[20%] text-right">Amt</th>
+              <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-center w-[6%]">S.No</th>
+              <th className="py-2 px-1.5 sm:py-2.5 sm:px-2.5 font-bold">Description of Goods</th>
+              <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-center">HSN</th>
+              {showTaxColumns && <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-center">GST %</th>}
+              <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-center">Qty</th>
+              <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-right">Rate</th>
+              {showMrpColumn && <th className="py-2 px-1 sm:py-2.5 sm:px-2 font-bold text-right">MRP</th>}
+              <th className="py-2 px-1.5 sm:py-2.5 sm:px-2.5 font-bold text-right">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 text-[9px] sm:text-[11px] print:text-[11px]">
+          <tbody className="divide-y divide-slate-100 text-[8.5px] sm:text-[10.5px] print:text-[10.5px]">
             {items.map((item: any, idx: number) => {
               const displayName = item.isService 
                 ? (item.itemName || item.serviceItem?.name || '')
                 : (item.product?.name || '');
+              const itemAmt = Number(item.amount || item.total || 0);
+              const itemTax = Number(item.tax || 0);
+              const itemTaxable = amountIsPreTax ? itemAmt : Math.max(0, itemAmt - itemTax);
+              let gstRate = Number(!item.isService ? item.product?.taxPercent : item.serviceItem?.taxPercent) || 0;
+              if (gstRate === 0 && itemTax > 0 && itemTaxable > 0) {
+                gstRate = Math.round((itemTax / itemTaxable) * 100);
+              }
+              const mrpVal = Number(!item.isService ? item.product?.mrp : 0) || 0;
               return (
-                <tr key={idx} className="bg-white">
-                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-500 font-medium">{idx + 1}</td>
-                  <td className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3">
+                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                  <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center text-slate-500 font-medium">{idx + 1}</td>
+                  <td className="py-1.5 px-1.5 sm:py-2 sm:px-2.5">
                     <span className="font-bold text-slate-800 break-words">{displayName}</span>
                     {!item.isService && item.product?.code && (
-                      <span className="text-slate-500 text-[8px] sm:text-[10px] print:text-[10px] ml-0.5 sm:ml-1 whitespace-nowrap">({item.product.code})</span>
+                      <span className="text-slate-500 text-[7.5px] sm:text-[9px] ml-1 whitespace-nowrap">({item.product.code})</span>
                     )}
                   </td>
-                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-600 truncate">{!item.isService ? (item.product?.hsnCode || '-') : '-'}</td>
-                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-center text-slate-600 font-medium whitespace-nowrap">{item.quantity} {item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}</td>
-                  <td className="py-2 px-1 sm:py-3 sm:px-3 print:py-2 print:px-3 text-right text-slate-600 whitespace-nowrap">{Number(item.rate || 0).toFixed(2)}</td>
-                  <td className="py-2 px-1.5 sm:py-3 sm:px-3 print:py-2 print:px-3 text-right font-bold text-slate-800 whitespace-nowrap">{Number(item.amount || item.total || 0).toFixed(2)}</td>
+                  <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center text-slate-600">{!item.isService ? (item.product?.hsnCode || '-') : '-'}</td>
+                  {showTaxColumns && (
+                    <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center text-slate-600 whitespace-nowrap">
+                      {gstRate > 0 ? `GST ${gstRate}%` : '0%'}
+                    </td>
+                  )}
+                  <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center text-slate-700 font-medium whitespace-nowrap">
+                    {Number(item.quantity || 0)} {item.isService ? 'Svc' : (item.product?.unit?.shortCode || 'Nos')}
+                  </td>
+                  <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-right text-slate-700 whitespace-nowrap">{Number(item.rate || 0).toFixed(2)}</td>
+                  {showMrpColumn && (
+                    <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-right text-slate-500 whitespace-nowrap">
+                      {mrpVal > 0 ? mrpVal.toFixed(2) : '-'}
+                    </td>
+                  )}
+                  <td className="py-1.5 px-1.5 sm:py-2 sm:px-2.5 text-right font-bold text-slate-900 whitespace-nowrap">{itemAmt.toFixed(2)}</td>
                 </tr>
               );
             })}
           </tbody>
+          <tfoot>
+            <tr className="bg-[#F0F5FA] border-t-2 border-[#1A63A8] text-[#04325E] font-bold text-[8.5px] sm:text-[10.5px] print:text-[10.5px]">
+              <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center"></td>
+              <td className="py-1.5 px-1.5 sm:py-2 sm:px-2.5 uppercase tracking-wide">Total</td>
+              <td className="py-1.5 px-1 sm:py-2 sm:px-2"></td>
+              {showTaxColumns && <td className="py-1.5 px-1 sm:py-2 sm:px-2"></td>}
+              <td className="py-1.5 px-1 sm:py-2 sm:px-2 text-center whitespace-nowrap">{Number(totalQty).toFixed(2)}</td>
+              <td className="py-1.5 px-1 sm:py-2 sm:px-2"></td>
+              {showMrpColumn && <td className="py-1.5 px-1 sm:py-2 sm:px-2"></td>}
+              <td className="py-1.5 px-1.5 sm:py-2 sm:px-2.5 text-right whitespace-nowrap">{currency} {itemsAmountSum.toFixed(2)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
-      {/* Footer Area */}
-      <div className={`mt-3 sm:mt-auto grid gap-3 ${isA5 ? 'grid-cols-[1fr_160px]' : 'grid-cols-1 sm:grid-cols-[1fr_350px] print:grid-cols-[1fr_350px] sm:gap-6'}`}>
-        {/* Left Footer: Notes/Terms & QR */}
-        <div className="flex flex-col gap-2 h-full order-2 sm:order-1 print:order-1">
-          <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-2' : 'p-3 sm:p-4'} flex-1 flex flex-col`}>
-            <h3 className="text-[9px] font-bold text-[#1A63A8] uppercase tracking-widest mb-1">Terms & Conditions</h3>
+      {/* Totals & Left Details Grid */}
+      <div className={`grid gap-3 ${isA5 ? 'grid-cols-[1fr_165px] mb-2' : 'grid-cols-1 sm:grid-cols-[1fr_320px] print:grid-cols-[1fr_320px] sm:gap-5 mb-3'}`}>
+        {/* Left: Bank Details + Terms */}
+        <div className="flex flex-col gap-2 order-2 sm:order-1 print:order-1">
+          {hasBankDetails && (
+            <div className={`bg-slate-50 border border-slate-200/80 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-3'}`}>
+              <h3 className="text-[9px] font-bold text-[#1A63A8] uppercase tracking-widest mb-1">Company&apos;s Bank Details</h3>
+              <div className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 ${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'} text-slate-700`}>
+                {settings?.bankName && (
+                  <>
+                    <span className="font-bold text-slate-600">Bank Name:</span>
+                    <span className="font-semibold text-slate-900">{settings.bankName}</span>
+                  </>
+                )}
+                {settings?.bankAccountNo && (
+                  <>
+                    <span className="font-bold text-slate-600">Account No:</span>
+                    <span className="font-semibold text-slate-900">{settings.bankAccountNo}</span>
+                  </>
+                )}
+                {settings?.bankBranchIfsc && (
+                  <>
+                    <span className="font-bold text-slate-600">Branch &amp; IFSC Code:</span>
+                    <span className="font-semibold text-slate-900">{settings.bankBranchIfsc}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className={`bg-slate-50 border border-slate-200/80 rounded-lg ${isA5 ? 'p-2' : 'p-2.5 sm:p-3'} flex-1 flex flex-col`}>
+            <h3 className="text-[9px] font-bold text-[#1A63A8] uppercase tracking-widest mb-1">Terms &amp; Conditions</h3>
             <div
-              className={`${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'} text-slate-800 font-bold prose prose-sm max-w-none html-content flex-1`}
+              className={`${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[10.5px]'} text-slate-700 font-medium prose prose-sm max-w-none html-content flex-1`}
               dangerouslySetInnerHTML={{ __html: (settings?.invoiceNotes !== undefined && settings?.invoiceNotes !== null) ? settings.invoiceNotes : '1. Goods once sold cannot be taken back or exchanged.<br/>2. Subject to Salem jurisdiction.' }}
             />
           </div>
+        </div>
+
+        {/* Right: Calculation Summary */}
+        <div className="flex flex-col justify-start order-1 sm:order-2 print:order-2">
+          <div className={`bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg ${isA5 ? 'pt-2 pb-1' : 'pt-2.5 pb-1.5'} flex flex-col`}>
+            <div className={`${isA5 ? 'space-y-0.5 text-[8.5px] px-2 mb-1' : 'space-y-1.5 text-[11px] sm:text-[12px] px-3 sm:px-4 mb-2'}`}>
+              <div className="flex justify-between text-[#334155]">
+                <span>Amount:</span>
+                <span className="font-semibold">{subtotalVal.toFixed(2)}</span>
+              </div>
+              {discountVal > 0 && (
+                <>
+                  <div className="flex justify-between text-[#334155]">
+                    <span>Discount:</span>
+                    <span className="font-semibold">-{discountVal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#334155] border-t border-slate-200 pt-1 font-semibold">
+                    <span>Total:</span>
+                    <span>{taxableTotalVal.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              {showTaxColumns && totalTaxVal > 0 && (
+                <>
+                  <div className="flex justify-between text-[#334155]">
+                    <span>Sales CGST:</span>
+                    <span className="font-semibold">{cgstTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#334155]">
+                    <span>Sales SGST:</span>
+                    <span className="font-semibold">{sgstTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#334155]">
+                    <span>Sales IGST:</span>
+                    <span className="font-semibold">{igstTotal.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              {freightVal > 0 && (
+                <div className="flex justify-between text-[#334155]">
+                  <span>Freight Charges (+):</span>
+                  <span className="font-semibold">{freightVal.toFixed(2)}</span>
+                </div>
+              )}
+              {hasRoundOff && (
+                <div className="flex justify-between text-[#334155]">
+                  <span>Round Off:</span>
+                  <span className="font-semibold">{roundOffVal > 0 ? `+${roundOffVal.toFixed(2)}` : roundOffVal.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+            <div className={`bg-[#F0F5FA] border-t-2 border-[#1A63A8] ${isA5 ? 'px-2 py-1' : 'px-3 py-2 sm:px-4 sm:py-2.5'} flex justify-between items-center text-[#04325E] rounded-b-md`}>
+              <span className={`font-bold ${isA5 ? 'text-[10px]' : 'text-xs sm:text-[14px]'}`}>Total Due:</span>
+              <span className={`font-black tracking-tight ${isA5 ? 'text-[10px]' : 'text-sm sm:text-[15px]'}`}>{currency} {grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Amount Chargeable in Words + E. & O.E */}
+      <div className={`bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg ${isA5 ? 'px-2 py-1.5 mb-2' : 'px-3 py-2 sm:px-4 mb-3'} flex justify-between items-start gap-2`}>
+        <div>
+          <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-wider">Amount Chargeable (in words)</p>
+          <p className={`${isA5 ? 'text-[8px]' : 'text-[10px] sm:text-[11px]'} font-extrabold text-[#04325E] uppercase mt-0.5`}>
+            {numberToWords(grandTotal, isIndianCurrency)}
+          </p>
+        </div>
+        <span className="text-[8px] sm:text-[9px] font-bold text-slate-600 shrink-0">E. &amp; O.E</span>
+      </div>
+
+      {/* GST Rate-wise Tax Breakdown Table */}
+      {showTaxColumns && taxBreakdownRows.length > 0 && (
+        <div className={`border border-slate-200 rounded-lg ${isA5 ? 'mb-2' : 'mb-3'} overflow-x-auto print:overflow-visible`}>
+          <table className="w-full text-center border-collapse">
+            <thead className="bg-[#2D6AA1] text-white uppercase tracking-wider text-[7px] sm:text-[8.5px] print:text-[8.5px]">
+              <tr>
+                <th rowSpan={2} className="py-1.5 px-2 font-bold text-left border-r border-white/20">GST Rate</th>
+                <th rowSpan={2} className="py-1.5 px-2 font-bold text-right border-r border-white/20">Taxable Value</th>
+                <th colSpan={2} className="py-1 px-2 font-bold border-b border-r border-white/20">CGST</th>
+                <th colSpan={2} className="py-1 px-2 font-bold border-b border-r border-white/20">SGST</th>
+                <th colSpan={2} className="py-1 px-2 font-bold border-b border-white/20">IGST</th>
+              </tr>
+              <tr>
+                <th className="py-1 px-1.5 font-bold border-r border-white/20">Rate</th>
+                <th className="py-1 px-1.5 font-bold text-right border-r border-white/20">Amount</th>
+                <th className="py-1 px-1.5 font-bold border-r border-white/20">Rate</th>
+                <th className="py-1 px-1.5 font-bold text-right border-r border-white/20">Amount</th>
+                <th className="py-1 px-1.5 font-bold border-r border-white/20">Rate</th>
+                <th className="py-1 px-1.5 font-bold text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-[8px] sm:text-[10px] print:text-[10px]">
+              {taxBreakdownRows.map((row, idx) => (
+                <tr key={idx} className="bg-white">
+                  <td className="py-1.5 px-2 text-left font-semibold text-slate-800">GST {row.rate} %</td>
+                  <td className="py-1.5 px-2 text-right text-slate-700">{row.taxable.toFixed(2)}</td>
+                  <td className="py-1.5 px-1.5 text-slate-600">{isIntraState ? `${row.rate / 2} %` : '0 %'}</td>
+                  <td className="py-1.5 px-1.5 text-right text-slate-700">{row.cgst.toFixed(2)}</td>
+                  <td className="py-1.5 px-1.5 text-slate-600">{isIntraState ? `${row.rate / 2} %` : '0 %'}</td>
+                  <td className="py-1.5 px-1.5 text-right text-slate-700">{row.sgst.toFixed(2)}</td>
+                  <td className="py-1.5 px-1.5 text-slate-600">{!isIntraState ? `${row.rate} %` : '0 %'}</td>
+                  <td className="py-1.5 px-1.5 text-right text-slate-700">{row.igst.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-[#F0F5FA] border-t border-[#1A63A8] text-[#04325E] font-bold text-[8px] sm:text-[10px] print:text-[10px]">
+                <td className="py-1.5 px-2 text-left">Total</td>
+                <td className="py-1.5 px-2 text-right">{taxBreakdownRows.reduce((s, r) => s + r.taxable, 0).toFixed(2)}</td>
+                <td className="py-1.5 px-1.5"></td>
+                <td className="py-1.5 px-1.5 text-right">{taxBreakdownRows.reduce((s, r) => s + r.cgst, 0).toFixed(2)}</td>
+                <td className="py-1.5 px-1.5"></td>
+                <td className="py-1.5 px-1.5 text-right">{taxBreakdownRows.reduce((s, r) => s + r.sgst, 0).toFixed(2)}</td>
+                <td className="py-1.5 px-1.5"></td>
+                <td className="py-1.5 px-1.5 text-right">{taxBreakdownRows.reduce((s, r) => s + r.igst, 0).toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div className={`bg-slate-50 border-t border-slate-200 ${isA5 ? 'px-2 py-1 text-[7.5px]' : 'px-3 py-1.5 text-[9px] sm:text-[10px]'} flex flex-wrap gap-x-2`}>
+            <span className="font-bold text-slate-600">Tax Amount (in words):</span>
+            <span className="font-extrabold text-[#1A63A8] uppercase">{numberToWords(totalTaxVal, isIndianCurrency)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Bar: QR Code & Authorised Signatory */}
+      <div className="mt-auto pt-2 flex flex-col sm:flex-row print:flex-row justify-between items-stretch sm:items-end print:items-end gap-3">
+        <div>
           {activeUpiId && grandTotal > 0 && (
-            <div className={`bg-slate-50 border border-slate-100 rounded-lg ${isA5 ? 'p-1.5' : 'p-2.5 sm:p-3'} flex items-center gap-2`}>
+            <div className={`bg-slate-50 border border-slate-200/80 rounded-lg ${isA5 ? 'p-1.5' : 'p-2 sm:p-2.5'} flex items-center gap-2.5`}>
               <div className="bg-white p-1 rounded border border-slate-200 shadow-sm shrink-0">
                 <QRCodeCanvas
                   id="upi-qr-code-canvas"
                   value={`upi://pay?pa=${activeUpiId.trim()}&pn=${encodeURIComponent(settings?.shopName || 'Shop')}&tr=${encodeURIComponent(invoiceNo)}&am=${Number(grandTotal).toFixed(2)}&cu=INR`}
                   size={900}
                   level="M"
-                  style={{ width: isA5 ? 40 : 54, height: isA5 ? 40 : 54 }}
+                  style={{ width: isA5 ? 40 : 52, height: isA5 ? 40 : 52 }}
                 />
               </div>
               <div>
@@ -868,62 +1319,27 @@ const InvoicePrintModal = ({ isOpen, onClose, sale: initialSale, hiddenRenderer 
           )}
         </div>
 
-        {/* Right Footer: Totals & Signature */}
-        <div className="flex flex-col justify-end order-1 sm:order-2 print:order-2">
-          <div className={`bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg ${isA5 ? 'pt-2 pb-1' : 'pt-3 pb-2 sm:pt-4'} flex flex-col ${isA5 ? 'mb-2' : 'mb-3 sm:mb-6'}`}>
-            <div className={`${isA5 ? 'space-y-1 text-[9px] px-2 mb-1' : 'space-y-2 sm:space-y-3 text-[12px] sm:text-[13px] px-3 sm:px-4 mb-2 sm:mb-4'}`}>
-              <div className="flex justify-between text-[#334155]">
-                <span>Subtotal:</span>
-                <span className="font-semibold">{Number(sale?.subtotal || 0).toFixed(2)}</span>
-              </div>
-              {settings?.enableTax && (
-                (() => {
-                  const taxNum = Number(sale?.tax || 0);
-                  if (isNaN(taxNum) || taxNum === 0) return null;
-                  const storeState = (settings.state || '').trim().toLowerCase();
-                  const custState = (sale?.customer?.state || '').trim().toLowerCase();
-                  if (storeState && custState && storeState === custState) {
-                    const splitTax = taxNum / 2;
-                    return (
-                      <>
-                        <div className="flex justify-between text-[#334155]"><span>CGST:</span><span className="font-semibold">{splitTax.toFixed(2)}</span></div>
-                        <div className="flex justify-between text-[#334155]"><span>SGST:</span><span className="font-semibold">{splitTax.toFixed(2)}</span></div>
-                      </>
-                    );
-                  }
-                  return <div className="flex justify-between text-[#334155]"><span>IGST:</span><span className="font-semibold">{taxNum.toFixed(2)}</span></div>;
-                })()
-              )}
-              {Number(sale?.discount) > 0 && (
-                <div className="flex justify-between text-[#334155]">
-                  <span>Discount:</span>
-                  <span className="font-semibold">{Number(sale?.discount || 0).toFixed(2)}</span>
-                </div>
-              )}
-            </div>
-            <div className={`bg-[#F0F5FA] border-y-2 border-[#1A63A8] ${isA5 ? 'px-2 py-1' : 'px-3 py-2 sm:px-4 sm:py-3'} flex justify-between items-center text-[#04325E] mt-1 mb-1`}>
-              <span className={`font-bold ${isA5 ? 'text-[10px]' : 'text-xs sm:text-[14px]'}`}>Total Due:</span>
-              <span className={`font-black tracking-tight ${isA5 ? 'text-[10px]' : 'text-sm sm:text-[15px]'}`}>{currency} {Number(grandTotal).toFixed(2)}</span>
-            </div>
-            <div className={`text-right ${isA5 ? 'px-2 pb-1 text-[7px]' : 'px-3 pb-1.5 sm:px-4 sm:pb-2 text-[8px] sm:text-[9px]'} text-[#1A63A8] font-bold uppercase tracking-wider`}>
-              {numberToWords(grandTotal)} ONLY
+        {!isEstimation && (
+          <div className="text-right relative ml-auto">
+            <p className={`${isA5 ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} font-bold text-[#04325E] uppercase mb-7 sm:mb-9`}>
+              For {settings?.shopName || 'POS Suite 360'}
+            </p>
+            {settings?.signatureImage && (
+              <img src={settings.signatureImage} alt="Authorised Signature" className="absolute bottom-5 right-4 h-8 sm:h-9 object-contain opacity-90 mix-blend-multiply" />
+            )}
+            <div className="inline-block border-t border-slate-400 pt-1 px-4 sm:px-6 min-w-[130px] sm:min-w-[160px]">
+              <p className="text-[8px] sm:text-[9.5px] font-bold text-slate-700 text-center">Authorised Signatory</p>
             </div>
           </div>
-
-          {settings?.signatureImage && !isEstimation && (
-            <div className="text-right mt-1 sm:mt-2 relative">
-              <p className={`${isA5 ? 'text-[8px]' : 'text-[9px] sm:text-[10px]'} font-bold text-slate-800 mb-6 sm:mb-8`}>For {settings?.shopName || 'POS Suite 360'}</p>
-              <img src={settings.signatureImage} alt="Authorised Signature" className="absolute bottom-5 right-6 h-7 sm:h-8 object-contain opacity-80 mix-blend-multiply" />
-              <div className="inline-block border-t border-slate-400 pt-1 px-4 sm:px-6 w-32 sm:w-36 mt-1 sm:mt-2">
-                <p className="text-[8px] sm:text-[9px] font-bold text-slate-700 text-center">Authorized Signatory</p>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className={`${isA5 ? 'mt-2' : 'mt-4 sm:mt-8'} text-center text-[9px] font-medium text-slate-600 border-t border-slate-200 pt-2`}>
-        <p>Thank you for partnering with {settings?.shopName || 'POS Suite 360'}! | Page 1 of 1</p>
+      {/* Footer */}
+      <div className={`${isA5 ? 'mt-2' : 'mt-3 sm:mt-4'} text-center text-[8.5px] sm:text-[9px] font-medium text-slate-600 border-t border-slate-200 pt-2 space-y-0.5`}>
+        {settings?.jurisdiction && (
+          <p className="font-bold text-slate-700 uppercase tracking-wide">{settings.jurisdiction}</p>
+        )}
+        <p className="text-slate-500">This is a computer generated invoice | Thank you for partnering with {settings?.shopName || 'POS Suite 360'}! | Page 1 of 1</p>
       </div>
     </div>
   );

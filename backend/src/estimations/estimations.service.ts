@@ -140,7 +140,11 @@ export class EstimationsService {
         user: { select: { id: true, name: true } },
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                unit: true,
+              },
+            },
           },
         },
       },

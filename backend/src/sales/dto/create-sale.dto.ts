@@ -62,6 +62,14 @@ export class CreateSaleDto {
   discount?: number;
 
   @IsNumber()
+  @IsOptional()
+  freightCharges?: number;
+
+  @IsNumber()
+  @IsOptional()
+  roundOff?: number;
+
+  @IsNumber()
   grandTotal: number;
 
   @IsArray()
